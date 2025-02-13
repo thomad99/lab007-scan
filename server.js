@@ -123,7 +123,7 @@ app.post('/api/train', trainUpload.single('image'), async (req, res) => {
 // Add Azure processing endpoint
 app.post('/api/scan', upload.single('image'), async (req, res) => {
     try {
-        console.log('Using Azure Computer Vision for OCR...');
+        console.log('Starting Azure Vision scan...');
         
         if (!req.file || !req.file.buffer) {
             throw new Error('No image file received');
@@ -135,31 +135,46 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
             bufferLength: req.file.buffer.length
         });
 
-        console.log('Azure Endpoint:', computerVisionEndpoint);
-        console.log('Azure Key configured:', computerVisionKey ? 'Yes (key hidden)' : 'No');
-
-        // Call Azure Computer Vision API
+        // Start the Azure scan
+        console.log('Initiating Azure scan...');
         const result = await computerVisionClient.readInStream(
             req.file.buffer,
             { language: 'en' }
         );
         
-        // Get operation location from the response
+        console.log('Initial response received, waiting for analysis...');
         const operationLocation = result.operationLocation;
-        
-        // Extract the operation ID from the operation location URL
         const operationId = operationLocation.split('/').pop();
         
-        // Wait for the results
+        // Wait for the results with more detailed logging
         let operationResult;
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds maximum wait
+        
         do {
+            attempts++;
+            console.log(`Checking scan status (attempt ${attempts})...`);
+            
             operationResult = await computerVisionClient.getReadResult(operationId);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        } while (operationResult.status === 'Running' || operationResult.status === 'NotStarted');
+            
+            console.log('Current status:', operationResult.status);
+            
+            if (operationResult.status === 'Failed') {
+                throw new Error('Azure Vision analysis failed');
+            }
+            
+            if (operationResult.status !== 'Succeeded') {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } while ((operationResult.status === 'Running' || operationResult.status === 'NotStarted') && attempts < maxAttempts);
 
-        console.log('Raw Azure Vision response:', operationResult);
+        if (attempts >= maxAttempts) {
+            throw new Error('Scan timed out after 30 seconds');
+        }
 
-        // Process the results with enhanced logic
+        console.log('Scan completed, processing results...');
+
+        // Process the results with enhanced logging
         const detectedItems = [];
         const boxes = [];
         let allDetectedText = [];
@@ -168,20 +183,34 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
             const readResults = operationResult.analyzeResult.readResults;
             
-            // Get all raw text first
+            // Log the complete raw response for debugging
+            console.log('Complete Azure response:', JSON.stringify(operationResult.analyzeResult, null, 2));
+
+            // Extract all text found
             allDetectedText = readResults.flatMap(page => page.lines.map(line => ({
                 text: line.text,
-                confidence: line.confidence || 0
+                confidence: line.confidence || 0,
+                boundingBox: line.boundingBox
             })));
 
-            // Get raw text
             rawText = readResults.map(page => page.lines.map(line => line.text).join('\n')).join('\n');
 
-            // Log all detected text
-            console.log('All detected text:', allDetectedText);
+            console.log('Raw text found:', rawText);
+            console.log('Individual text elements:', allDetectedText);
+
+            // Process each line of text
+            const lines = readResults.flatMap(page => page.lines);
+            console.log(`Found ${lines.length} lines of text`);
+
+            lines.forEach((line, index) => {
+                console.log(`Line ${index + 1}:`, {
+                    text: line.text,
+                    confidence: line.confidence,
+                    boundingBox: line.boundingBox
+                });
+            });
 
             // Group nearby lines that might be part of the same sail number
-            const lines = readResults.flatMap(page => page.lines);
             const groups = groupNearbyLines(lines);
 
             groups.forEach(group => {
@@ -207,6 +236,8 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
                     }
                 });
             });
+        } else {
+            console.log('No text found in image');
         }
 
         // Filter and sort results with enhanced criteria
@@ -233,14 +264,20 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
                     status: operationResult.status,
                     createdDateTime: operationResult.createdDateTime,
                     lastUpdatedDateTime: operationResult.lastUpdatedDateTime,
-                    analyzeResult: operationResult.analyzeResult
+                    analyzeResult: operationResult.analyzeResult,
+                    processingTime: `${attempts} seconds`,
+                    textFound: rawText ? 'Yes' : 'No',
+                    totalLinesFound: allDetectedText.length
                 }
             }
         });
 
     } catch (err) {
         console.error('Azure Vision error:', err);
-        res.status(500).json({ error: 'Failed to process image: ' + err.message });
+        res.status(500).json({ 
+            error: 'Failed to process image: ' + err.message,
+            details: err.stack
+        });
     }
 });
 
