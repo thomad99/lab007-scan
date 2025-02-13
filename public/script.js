@@ -85,15 +85,23 @@ async function init() {
             resultDiv.textContent = 'Scanning image...';
             console.log('Starting scan of frame');
             
-            // Enhance image contrast
+            // Enhance image contrast with softer threshold
             const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
             
-            // Increase contrast and convert to black and white
+            // More sophisticated image processing
+            const threshold = 160; // Increased from 128 for softer contrast
+            const contrast = 1.2; // Contrast multiplier
+            
             for (let i = 0; i < data.length; i += 4) {
                 const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                const threshold = 128;
-                const value = avg > threshold ? 255 : 0;
+                // Apply contrast before threshold
+                const adjusted = ((avg - 128) * contrast) + 128;
+                // Softer thresholding
+                const value = adjusted > threshold ? 255 : 
+                             adjusted < threshold - 30 ? 0 : // Clear black
+                             adjusted; // Keep grayscale for middle values
+                
                 data[i] = data[i + 1] = data[i + 2] = value;
             }
             context.putImageData(imageData, 0, 0);
@@ -173,6 +181,74 @@ async function init() {
 
         // Increase scan interval to 8 seconds to allow for better processing
         setTimeout(scanFrame, 8000);
+    }
+
+    document.getElementById('trainBtn').addEventListener('click', () => {
+        document.getElementById('trainingModal').style.display = 'block';
+    });
+
+    async function submitTraining() {
+        const imageFile = document.getElementById('trainImage').files[0];
+        const correctNumber = document.getElementById('correctNumber').value;
+        
+        if (!imageFile || !correctNumber) {
+            alert('Please select an image and enter the correct number');
+            return;
+        }
+
+        const trainCanvas = document.getElementById('trainCanvas');
+        const context = trainCanvas.getContext('2d');
+        
+        // Load and process image
+        const img = new Image();
+        img.onload = async () => {
+            trainCanvas.width = img.width;
+            trainCanvas.height = img.height;
+            context.drawImage(img, 0, 0);
+
+            // Apply same processing as live scan
+            const imageData = context.getImageData(0, 0, trainCanvas.width, trainCanvas.height);
+            const data = imageData.data;
+            
+            const threshold = 160;
+            const contrast = 1.2;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                const adjusted = ((avg - 128) * contrast) + 128;
+                const value = adjusted > threshold ? 255 : 
+                             adjusted < threshold - 30 ? 0 : 
+                             adjusted;
+                
+                data[i] = data[i + 1] = data[i + 2] = value;
+            }
+            context.putImageData(imageData, 0, 0);
+
+            // Send to server
+            try {
+                const blob = await new Promise(resolve => trainCanvas.toBlob(resolve));
+                const formData = new FormData();
+                formData.append('image', blob);
+                formData.append('number', correctNumber);
+
+                const response = await fetch('/api/train', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert('Training data submitted successfully');
+                    document.getElementById('trainingModal').style.display = 'none';
+                } else {
+                    throw new Error('Failed to submit training data');
+                }
+            } catch (error) {
+                console.error('Training submission error:', error);
+                alert('Error submitting training data');
+            }
+        };
+
+        img.src = URL.createObjectURL(imageFile);
     }
 }
 
