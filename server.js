@@ -383,7 +383,7 @@ app.get('/results', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
-// Add new endpoint for image analysis
+// Update the analyze endpoint to wait longer
 app.post('/api/analyze', upload.single('image'), async (req, res) => {
     try {
         console.log('Starting raw Azure Vision analysis...');
@@ -398,18 +398,31 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             { language: 'en' }
         );
         
-        // Wait for results
+        // Wait for results with more attempts
         const operationId = result.operationLocation.split('/').pop();
         let operationResult;
         let attempts = 0;
+        const maxAttempts = 60; // Wait up to 60 seconds
         
         do {
             attempts++;
+            console.log(`Checking result attempt ${attempts}...`);
             operationResult = await computerVisionClient.getReadResult(operationId);
+            
+            if (operationResult.status === 'Failed') {
+                throw new Error('Azure analysis failed');
+            }
+            
             if (operationResult.status !== 'Succeeded') {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        } while (operationResult.status === 'Running' && attempts < 30);
+        } while (operationResult.status !== 'Succeeded' && attempts < maxAttempts);
+
+        if (attempts >= maxAttempts) {
+            throw new Error('Analysis timed out');
+        }
+
+        console.log('Analysis completed:', operationResult.status);
 
         // Process results
         const analysis = {
