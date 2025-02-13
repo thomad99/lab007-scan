@@ -383,7 +383,7 @@ app.get('/results', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
-// Update the analyze endpoint to wait longer
+// Update the analyze endpoint with better rate limit handling
 app.post('/api/analyze', upload.single('image'), async (req, res) => {
     try {
         console.log('Starting raw Azure Vision analysis...');
@@ -392,37 +392,63 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             throw new Error('No image file received');
         }
 
+        console.log('Image received:', {
+            size: `${(req.file.size / 1024).toFixed(2)} KB`,
+            type: req.file.mimetype
+        });
+
         // Send to Azure
         const result = await computerVisionClient.readInStream(
             req.file.buffer,
             { language: 'en' }
         );
         
-        // Wait for results with more attempts
+        // Wait for results with exponential backoff
         const operationId = result.operationLocation.split('/').pop();
         let operationResult;
         let attempts = 0;
-        const maxAttempts = 60; // Wait up to 60 seconds
+        const maxAttempts = 10; // Reduce max attempts due to rate limits
         
+        async function getResultWithBackoff(attempt) {
+            try {
+                return await computerVisionClient.getReadResult(operationId);
+            } catch (error) {
+                if (error.response?.status === 429) {
+                    // Get retry-after time from headers or use exponential backoff
+                    const retryAfter = parseInt(error.response.headers?.['retry-after']) || Math.pow(2, attempt);
+                    console.log(`Rate limited. Waiting ${retryAfter} seconds before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    return null; // Signal to try again
+                }
+                throw error; // Re-throw other errors
+            }
+        }
+
         do {
             attempts++;
-            console.log(`Checking result attempt ${attempts}...`);
-            operationResult = await computerVisionClient.getReadResult(operationId);
+            console.log(`Attempt ${attempts} of ${maxAttempts}...`);
+            
+            operationResult = await getResultWithBackoff(attempts);
+            if (!operationResult) continue; // Rate limited, try again
             
             if (operationResult.status === 'Failed') {
                 throw new Error('Azure analysis failed');
             }
             
             if (operationResult.status !== 'Succeeded') {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Wait longer between attempts
+                const waitTime = Math.min(Math.pow(2, attempts), 45); // Max 45 seconds
+                console.log(`Waiting ${waitTime} seconds before next attempt...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
             }
-        } while (operationResult.status !== 'Succeeded' && attempts < maxAttempts);
+        } while ((!operationResult || operationResult.status !== 'Succeeded') && attempts < maxAttempts);
 
         if (attempts >= maxAttempts) {
-            throw new Error('Analysis timed out');
+            throw new Error('Analysis timed out after maximum attempts');
         }
 
         console.log('Analysis completed:', operationResult.status);
+        console.log('Raw Azure response:', JSON.stringify(operationResult.analyzeResult, null, 2));
 
         // Process results
         const analysis = {
