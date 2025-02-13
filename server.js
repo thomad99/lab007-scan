@@ -162,15 +162,20 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         // Process the results with enhanced logic
         const detectedItems = [];
         const boxes = [];
+        let allDetectedText = [];
+        let rawText = '';
 
         if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
             const readResults = operationResult.analyzeResult.readResults;
             
             // Get all raw text first
-            const allDetectedText = readResults.flatMap(page => page.lines.map(line => ({
+            allDetectedText = readResults.flatMap(page => page.lines.map(line => ({
                 text: line.text,
                 confidence: line.confidence || 0
             })));
+
+            // Get raw text
+            rawText = readResults.map(page => page.lines.map(line => line.text).join('\n')).join('\n');
 
             // Log all detected text
             console.log('All detected text:', allDetectedText);
@@ -220,7 +225,7 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
             numbers: validNumbers.map(v => v.number),
             boxes: boxes,
             debug: {
-                rawText: readResults.map(page => page.lines.map(line => line.text).join('\n')).join('\n'),
+                rawText: rawText,
                 allDetectedText: allDetectedText,
                 detectedItems: detectedItems,
                 validNumbers: validNumbers
