@@ -228,7 +228,13 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
                 rawText: rawText,
                 allDetectedText: allDetectedText,
                 detectedItems: detectedItems,
-                validNumbers: validNumbers
+                validNumbers: validNumbers,
+                rawResponse: {
+                    status: operationResult.status,
+                    createdDateTime: operationResult.createdDateTime,
+                    lastUpdatedDateTime: operationResult.lastUpdatedDateTime,
+                    analyzeResult: operationResult.analyzeResult
+                }
             }
         });
 
