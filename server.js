@@ -123,159 +123,140 @@ app.post('/api/train', trainUpload.single('image'), async (req, res) => {
 // Add Azure processing endpoint
 app.post('/api/scan', upload.single('image'), async (req, res) => {
     try {
-        console.log('Starting Azure Vision scan...');
+        console.log('=== Starting New Scan ===');
         
         if (!req.file || !req.file.buffer) {
             throw new Error('No image file received');
         }
 
-        console.log('Image received:', {
-            size: req.file.size,
-            mimetype: req.file.mimetype,
-            bufferLength: req.file.buffer.length
+        // STEP 1: Initial Image Upload
+        console.log('Step 1: Image received', {
+            size: `${(req.file.size / 1024).toFixed(2)} KB`,
+            type: req.file.mimetype
         });
 
-        // Start the Azure scan
-        console.log('Initiating Azure scan...');
+        // STEP 2: Send to Azure for Text Detection
+        console.log('Step 2: Sending to Azure Vision...');
         const result = await computerVisionClient.readInStream(
             req.file.buffer,
             { language: 'en' }
         );
         
-        console.log('Initial response received, waiting for analysis...');
-        const operationLocation = result.operationLocation;
-        const operationId = operationLocation.split('/').pop();
+        // STEP 3: Wait for Azure Processing
+        console.log('Step 3: Waiting for Azure analysis...');
+        const operationId = result.operationLocation.split('/').pop();
         
-        // Wait for the results with more detailed logging
         let operationResult;
         let attempts = 0;
-        const maxAttempts = 30; // 30 seconds maximum wait
         
         do {
             attempts++;
-            console.log(`Checking scan status (attempt ${attempts})...`);
-            
             operationResult = await computerVisionClient.getReadResult(operationId);
-            
-            console.log('Current status:', operationResult.status);
-            
-            if (operationResult.status === 'Failed') {
-                throw new Error('Azure Vision analysis failed');
-            }
+            console.log(`Attempt ${attempts}: Status = ${operationResult.status}`);
             
             if (operationResult.status !== 'Succeeded') {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        } while ((operationResult.status === 'Running' || operationResult.status === 'NotStarted') && attempts < maxAttempts);
+        } while (operationResult.status === 'Running' && attempts < 30);
 
-        if (attempts >= maxAttempts) {
-            throw new Error('Scan timed out after 30 seconds');
-        }
-
-        console.log('Scan completed, processing results...');
-
-        // Process the results with enhanced logging
-        const detectedItems = [];
-        const boxes = [];
-        let allDetectedText = [];
-        let rawText = '';
+        // STEP 4: Process What Azure Sees
+        console.log('Step 4: Processing Azure results...');
+        
+        let analysis = {
+            // A) What Azure sees in the image
+            generalDescription: {
+                allTextFound: [],
+                totalItems: 0,
+                description: ''
+            },
+            // B) Sail number specific analysis
+            sailNumberAnalysis: {
+                found: false,
+                numbers: [],
+                confidence: 0
+            }
+        };
 
         if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
             const readResults = operationResult.analyzeResult.readResults;
             
-            // Log the complete raw response for debugging
-            console.log('Complete Azure response:', JSON.stringify(operationResult.analyzeResult, null, 2));
-
-            // Extract all text found
-            allDetectedText = readResults.flatMap(page => page.lines.map(line => ({
-                text: line.text,
-                confidence: line.confidence || 0,
-                boundingBox: line.boundingBox
-            })));
-
-            rawText = readResults.map(page => page.lines.map(line => line.text).join('\n')).join('\n');
-
-            console.log('Raw text found:', rawText);
-            console.log('Individual text elements:', allDetectedText);
-
-            // Process each line of text
-            const lines = readResults.flatMap(page => page.lines);
-            console.log(`Found ${lines.length} lines of text`);
-
-            lines.forEach((line, index) => {
-                console.log(`Line ${index + 1}:`, {
-                    text: line.text,
-                    confidence: line.confidence,
-                    boundingBox: line.boundingBox
+            // A) Process everything Azure sees
+            readResults.forEach((page, pageIndex) => {
+                page.lines.forEach((line, lineIndex) => {
+                    analysis.generalDescription.allTextFound.push({
+                        text: line.text,
+                        confidence: line.confidence,
+                        location: `Line ${lineIndex + 1}`
+                    });
                 });
             });
 
-            // Group nearby lines that might be part of the same sail number
-            const groups = groupNearbyLines(lines);
+            analysis.generalDescription.totalItems = analysis.generalDescription.allTextFound.length;
+            analysis.generalDescription.description = `Found ${analysis.generalDescription.totalItems} text items in image`;
 
-            groups.forEach(group => {
-                // Combine text from nearby lines
-                const combinedText = group.map(line => line.text).join('');
-                console.log('Processing group text:', combinedText);
-
-                // Look for patterns that match sail numbers
-                const numbers = extractSailNumbers(combinedText);
+            // B) Look specifically for sail numbers
+            const potentialNumbers = [];
+            analysis.generalDescription.allTextFound.forEach(item => {
+                const cleaned = item.text.replace(/[OoIl]/g, '0').replace(/[^0-9]/g, '');
                 
-                numbers.forEach(number => {
-                    // Validate the number is in reasonable range for sail numbers
-                    if (isValidSailNumber(number)) {
-                        detectedItems.push({
-                            number: parseInt(number),
-                            confidence: group[0].confidence || 0,
-                            originalText: combinedText
+                if (cleaned.length >= 2 && cleaned.length <= 6) {
+                    const num = parseInt(cleaned);
+                    if (num >= 10 && num <= 999999) {
+                        potentialNumbers.push({
+                            number: num,
+                            confidence: item.confidence,
+                            originalText: item.text,
+                            location: item.location
                         });
-
-                        // Create a bounding box that encompasses all lines in the group
-                        const groupBox = calculateGroupBox(group);
-                        boxes.push(groupBox);
                     }
-                });
+                }
             });
-        } else {
-            console.log('No text found in image');
+
+            // Filter for high confidence sail numbers
+            const validNumbers = potentialNumbers.filter(item => item.confidence > 0.6);
+            
+            analysis.sailNumberAnalysis = {
+                found: validNumbers.length > 0,
+                numbers: validNumbers,
+                confidence: validNumbers.length > 0 ? 
+                    Math.max(...validNumbers.map(n => n.confidence)) : 0
+            };
         }
 
-        // Filter and sort results with enhanced criteria
-        const validNumbers = detectedItems
-            .filter(item => item.confidence > 0.6)
-            .sort((a, b) => b.confidence - a.confidence)
-            .map(item => ({
-                number: item.number,
-                confidence: item.confidence,
-                originalText: item.originalText
-            }));
-
-        console.log('Processed results:', validNumbers);
+        // STEP 5: Send Back Detailed Results
+        console.log('Step 5: Sending results...');
+        console.log('Analysis Summary:', {
+            textItemsFound: analysis.generalDescription.totalItems,
+            sailNumbersFound: analysis.sailNumberAnalysis.numbers.length,
+            hasSailNumber: analysis.sailNumberAnalysis.found
+        });
 
         res.json({
-            numbers: validNumbers.map(v => v.number),
-            boxes: boxes,
+            success: true,
+            // A) What's in the image
+            imageContents: {
+                totalTextItems: analysis.generalDescription.totalItems,
+                description: analysis.generalDescription.description,
+                allTextFound: analysis.generalDescription.allTextFound
+            },
+            // B) Sail number results
+            sailNumbers: {
+                found: analysis.sailNumberAnalysis.found,
+                numbers: analysis.sailNumberAnalysis.numbers,
+                confidence: analysis.sailNumberAnalysis.confidence
+            },
+            // Debug info
             debug: {
-                rawText: rawText,
-                allDetectedText: allDetectedText,
-                detectedItems: detectedItems,
-                validNumbers: validNumbers,
-                rawResponse: {
-                    status: operationResult.status,
-                    createdDateTime: operationResult.createdDateTime,
-                    lastUpdatedDateTime: operationResult.lastUpdatedDateTime,
-                    analyzeResult: operationResult.analyzeResult,
-                    processingTime: `${attempts} seconds`,
-                    textFound: rawText ? 'Yes' : 'No',
-                    totalLinesFound: allDetectedText.length
-                }
+                processingTime: `${attempts} seconds`,
+                status: operationResult.status,
+                rawResponse: operationResult.analyzeResult
             }
         });
 
     } catch (err) {
-        console.error('Azure Vision error:', err);
+        console.error('Error during scan:', err);
         res.status(500).json({ 
-            error: 'Failed to process image: ' + err.message,
+            error: 'Scan failed: ' + err.message,
             details: err.stack
         });
     }
