@@ -2,6 +2,8 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const multer = require('multer');
+const { ComputerVisionClient } = require('@azure/cognitiveservices-computervision');
+const { ApiKeyCredentials } = require('@azure/ms-rest-azure-js');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -43,6 +45,16 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ dest: 'training_data/' });
+
+// Add these environment variables in Render
+const computerVisionKey = process.env.AZURE_VISION_KEY;
+const computerVisionEndpoint = process.env.AZURE_VISION_ENDPOINT;
+
+// Initialize Azure client
+const computerVisionClient = new ComputerVisionClient(
+    new ApiKeyCredentials({ inHeader: { 'Ocp-Apim-Subscription-Key': computerVisionKey } }),
+    computerVisionEndpoint
+);
 
 // API endpoint to save numbers
 app.post('/api/numbers', async (req, res) => {
@@ -92,6 +104,60 @@ app.post('/api/train', upload.single('image'), async (req, res) => {
     } catch (err) {
         console.error('Error saving training data:', err);
         res.status(500).json({ error: 'Failed to save training data' });
+    }
+});
+
+// Add Azure processing endpoint
+app.post('/api/scan', upload.single('image'), async (req, res) => {
+    try {
+        const imageBuffer = req.file.buffer;
+
+        // Call Azure Computer Vision API
+        const result = await computerVisionClient.recognizeText(imageBuffer, { language: 'en' });
+
+        // Process the results
+        const detectedItems = [];
+        const boxes = [];
+
+        if (result.lines) {
+            for (const line of result.lines) {
+                // Extract numbers from text
+                const numbers = line.text.match(/\d{2,6}/g);
+                if (numbers) {
+                    numbers.forEach(number => {
+                        detectedItems.push({
+                            number: parseInt(number),
+                            confidence: line.confidence || 0
+                        });
+                    });
+
+                    // Save bounding box information
+                    if (line.boundingBox) {
+                        boxes.push({
+                            x: line.boundingBox[0],
+                            y: line.boundingBox[1],
+                            width: line.boundingBox[2] - line.boundingBox[0],
+                            height: line.boundingBox[3] - line.boundingBox[1]
+                        });
+                    }
+                }
+            }
+        }
+
+        // Filter and sort results
+        const validNumbers = detectedItems
+            .filter(item => item.confidence > 0.6)
+            .sort((a, b) => b.confidence - a.confidence)
+            .map(item => item.number);
+
+        res.json({
+            numbers: validNumbers,
+            boxes: boxes
+        });
+
+    } catch (err) {
+        console.error('Azure Vision error:', err);
+        res.status(500).json({ error: 'Failed to process image' });
     }
 });
 
