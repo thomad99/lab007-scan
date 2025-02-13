@@ -383,10 +383,10 @@ app.get('/results', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
-// Update the analyze endpoint with better rate limit handling
+// Update the analyze endpoint to be simpler
 app.post('/api/analyze', upload.single('image'), async (req, res) => {
     try {
-        console.log('Starting raw Azure Vision analysis...');
+        console.log('Starting Azure Vision analysis...');
         
         if (!req.file || !req.file.buffer) {
             throw new Error('No image file received');
@@ -397,58 +397,26 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             type: req.file.mimetype
         });
 
-        // Send to Azure
+        // Send image to Azure
+        console.log('Sending to Azure...');
         const result = await computerVisionClient.readInStream(
             req.file.buffer,
             { language: 'en' }
         );
         
-        // Wait for results with exponential backoff
+        // Get operation ID
         const operationId = result.operationLocation.split('/').pop();
-        let operationResult;
-        let attempts = 0;
-        const maxAttempts = 10; // Reduce max attempts due to rate limits
+        console.log('Got operation ID:', operationId);
+
+        // Wait 3 seconds before checking result
+        console.log('Waiting 3 seconds before checking result...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Get the result
+        console.log('Checking result...');
+        const operationResult = await computerVisionClient.getReadResult(operationId);
         
-        async function getResultWithBackoff(attempt) {
-            try {
-                return await computerVisionClient.getReadResult(operationId);
-            } catch (error) {
-                if (error.response?.status === 429) {
-                    // Get retry-after time from headers or use exponential backoff
-                    const retryAfter = parseInt(error.response.headers?.['retry-after']) || Math.pow(2, attempt);
-                    console.log(`Rate limited. Waiting ${retryAfter} seconds before retry...`);
-                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-                    return null; // Signal to try again
-                }
-                throw error; // Re-throw other errors
-            }
-        }
-
-        do {
-            attempts++;
-            console.log(`Attempt ${attempts} of ${maxAttempts}...`);
-            
-            operationResult = await getResultWithBackoff(attempts);
-            if (!operationResult) continue; // Rate limited, try again
-            
-            if (operationResult.status === 'Failed') {
-                throw new Error('Azure analysis failed');
-            }
-            
-            if (operationResult.status !== 'Succeeded') {
-                // Wait longer between attempts
-                const waitTime = Math.min(Math.pow(2, attempts), 45); // Max 45 seconds
-                console.log(`Waiting ${waitTime} seconds before next attempt...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-            }
-        } while ((!operationResult || operationResult.status !== 'Succeeded') && attempts < maxAttempts);
-
-        if (attempts >= maxAttempts) {
-            throw new Error('Analysis timed out after maximum attempts');
-        }
-
-        console.log('Analysis completed:', operationResult.status);
-        console.log('Raw Azure response:', JSON.stringify(operationResult.analyzeResult, null, 2));
+        console.log('Azure response status:', operationResult.status);
 
         // Process results
         const analysis = {
@@ -456,7 +424,7 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             detectedItems: []
         };
 
-        if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
+        if (operationResult.analyzeResult?.readResults) {
             operationResult.analyzeResult.readResults.forEach(page => {
                 page.lines.forEach(line => {
                     // Add raw text
@@ -479,11 +447,16 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             });
         }
 
+        console.log('Analysis complete:', {
+            textItems: analysis.rawText.length,
+            words: analysis.detectedItems.length
+        });
+
         res.json({
             success: true,
             rawText: analysis.rawText,
             detectedItems: analysis.detectedItems,
-            processingTime: `${attempts} seconds`,
+            processingTime: '3 seconds',
             status: operationResult.status,
             rawResponse: operationResult.analyzeResult
         });
