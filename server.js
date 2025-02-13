@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const multer = require('multer');
 const { ComputerVisionClient } = require('@azure/cognitiveservices-computervision');
-const { ApiKeyCredentials } = require('@azure/ms-rest-azure-js');
+const { CognitiveServicesCredentials } = require('@azure/ms-rest-azure-js');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -52,7 +52,7 @@ const computerVisionEndpoint = process.env.AZURE_VISION_ENDPOINT;
 
 // Initialize Azure client
 const computerVisionClient = new ComputerVisionClient(
-    new ApiKeyCredentials({ inHeader: { 'Ocp-Apim-Subscription-Key': computerVisionKey } }),
+    new CognitiveServicesCredentials(computerVisionKey),
     computerVisionEndpoint
 );
 
