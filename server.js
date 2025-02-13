@@ -383,6 +383,86 @@ app.get('/results', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
+// Add new endpoint for image analysis
+app.post('/api/analyze', upload.single('image'), async (req, res) => {
+    try {
+        console.log('Starting raw Azure Vision analysis...');
+        
+        if (!req.file || !req.file.buffer) {
+            throw new Error('No image file received');
+        }
+
+        // Send to Azure
+        const result = await computerVisionClient.readInStream(
+            req.file.buffer,
+            { language: 'en' }
+        );
+        
+        // Wait for results
+        const operationId = result.operationLocation.split('/').pop();
+        let operationResult;
+        let attempts = 0;
+        
+        do {
+            attempts++;
+            operationResult = await computerVisionClient.getReadResult(operationId);
+            if (operationResult.status !== 'Succeeded') {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } while (operationResult.status === 'Running' && attempts < 30);
+
+        // Process results
+        const analysis = {
+            rawText: [],
+            detectedItems: []
+        };
+
+        if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
+            operationResult.analyzeResult.readResults.forEach(page => {
+                page.lines.forEach(line => {
+                    // Add raw text
+                    analysis.rawText.push({
+                        text: line.text,
+                        confidence: line.confidence,
+                        boundingBox: line.boundingBox
+                    });
+
+                    // Add detected items (words)
+                    line.words?.forEach(word => {
+                        analysis.detectedItems.push({
+                            type: 'word',
+                            text: word.text,
+                            confidence: word.confidence,
+                            boundingBox: word.boundingBox
+                        });
+                    });
+                });
+            });
+        }
+
+        res.json({
+            success: true,
+            rawText: analysis.rawText,
+            detectedItems: analysis.detectedItems,
+            processingTime: `${attempts} seconds`,
+            status: operationResult.status,
+            rawResponse: operationResult.analyzeResult
+        });
+
+    } catch (err) {
+        console.error('Analysis error:', err);
+        res.status(500).json({ 
+            error: 'Analysis failed: ' + err.message,
+            details: err.stack
+        });
+    }
+});
+
+// Add route to serve test page
+app.get('/test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
     console.log(`Database URL: ${process.env.DATABASE_URL.split('@')[1]}`); // Only log the host part for security
