@@ -80,9 +80,26 @@
             <label>
                 <input type="checkbox" id="debugMode"> Show Debug Info
             </label>
+            <button id="trainBtn">Training Mode</button>
         </div>
         <div id="result">Status will appear here...</div>
         <div id="debug" class="debug"></div>
+    </div>
+
+    <!-- Add training modal -->
+    <div id="trainingModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000;">
+        <div style="background: white; max-width: 600px; margin: 50px auto; padding: 20px; border-radius: 10px;">
+            <h2>Training Mode</h2>
+            <p>Upload an image and enter the correct sail number:</p>
+            <input type="file" id="trainImage" accept="image/*" style="margin: 10px 0;">
+            <br>
+            <input type="text" id="correctNumber" placeholder="Enter correct sail number" style="margin: 10px 0; padding: 5px;">
+            <br>
+            <canvas id="trainCanvas" style="max-width: 100%; margin: 10px 0;"></canvas>
+            <br>
+            <button onclick="submitTraining()">Submit</button>
+            <button onclick="document.getElementById('trainingModal').style.display='none'">Close</button>
+        </div>
     </div>
 </body>
 </html> 
