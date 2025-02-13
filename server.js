@@ -111,13 +111,21 @@ app.post('/api/train', upload.single('image'), async (req, res) => {
 app.post('/api/scan', upload.single('image'), async (req, res) => {
     try {
         console.log('Using Azure Computer Vision for OCR...');
-        const imageBuffer = req.file.buffer;
+        
+        if (!req.file) {
+            throw new Error('No image file received');
+        }
 
         console.log('Azure Endpoint:', computerVisionEndpoint);
         console.log('Azure Key configured:', computerVisionKey ? 'Yes (key hidden)' : 'No');
 
+        // Convert the file buffer to a URL-friendly format
+        const imageUrl = {
+            source: req.file.buffer
+        };
+
         // Call Azure Computer Vision API with updated method
-        const result = await computerVisionClient.read(imageBuffer);
+        const result = await computerVisionClient.read(imageUrl);
         
         // Get operation location from the response
         const operationLocation = result.operationLocation;
@@ -129,7 +137,7 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         let operationResult;
         do {
             operationResult = await computerVisionClient.getReadResult(operationId);
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            await new Promise(resolve => setTimeout(resolve, 1000));
         } while (operationResult.status === 'Running' || operationResult.status === 'NotStarted');
 
         console.log('Raw Azure Vision response:', operationResult);
