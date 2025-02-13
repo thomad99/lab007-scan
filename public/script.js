@@ -112,32 +112,40 @@ async function init() {
             if (debugCheckbox.checked) {
                 let debugText = `
 === Azure Vision Analysis ===
-Raw text found in image:
+Time: ${new Date().toLocaleString()}
+Status: ${result.debug.rawResponse.status}
+Scan started: ${result.debug.rawResponse.createdDateTime}
+Scan completed: ${result.debug.rawResponse.lastUpdatedDateTime}
+
+=== Raw Text Found ===
 ${result.debug.rawText || 'No text found'}
 
-=== Processing Steps ===
-1. All detected text items:
+=== All Text Items (Unfiltered) ===
 ${result.debug.allDetectedText.map(item => 
-    `- Text: "${item.text}" (Confidence: ${(item.confidence * 100).toFixed(1)}%)`
+    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
 ).join('\n')}
 
-2. Potential Numbers Found:
+=== Number Processing ===
+1. Text items found: ${result.debug.allDetectedText.length}
+2. Potential numbers found: ${result.debug.detectedItems.length}
+3. Valid sail numbers: ${result.debug.validNumbers.length}
+
+=== Potential Numbers ===
 ${result.debug.detectedItems.map(item => 
-    `- Number: ${item.number} (From text: "${item.originalText}")
-     Confidence: ${(item.confidence * 100).toFixed(1)}%`
-).join('\n')}
+    `• ${item.number} (from "${item.originalText}")
+    - Confidence: ${(item.confidence * 100).toFixed(1)}%
+    - Valid: ${isValidSailNumber(item.number) ? 'Yes' : 'No'}`
+).join('\n') || 'None found'}
 
-3. Valid Sail Numbers:
-${result.debug.validNumbers.length > 0 ? 
-    result.debug.validNumbers.map(v => 
-        `- ${v.number} (Confidence: ${(v.confidence * 100).toFixed(1)}%)`
-    ).join('\n') : 
-    'None found'}
+=== Final Valid Numbers ===
+${result.debug.validNumbers.map(v => 
+    `• ${v.number} (${(v.confidence * 100).toFixed(1)}% confident)`
+).join('\n') || 'None found'}
 
-=== Summary ===
-Total text items found: ${result.debug.allDetectedText.length}
-Potential numbers found: ${result.debug.detectedItems.length}
-Valid sail numbers: ${result.debug.validNumbers.length}
+=== Processing Notes ===
+- Looking for numbers between 10 and 999999
+- Minimum confidence threshold: 60%
+- Converting O/o to 0, I/l to 1
                 `.trim();
 
                 debugDiv.textContent = debugText;
