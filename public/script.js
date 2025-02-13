@@ -111,41 +111,26 @@ async function init() {
             // Always show what Azure found, even if no valid sail numbers
             if (debugCheckbox.checked) {
                 let debugText = `
-=== Azure Vision Analysis ===
-Time: ${new Date().toLocaleString()}
-Status: ${result.debug.rawResponse.status}
-Scan started: ${result.debug.rawResponse.createdDateTime}
-Scan completed: ${result.debug.rawResponse.lastUpdatedDateTime}
+=== A) WHAT'S IN THE IMAGE ===
+Total text items found: ${result.imageContents.totalItems}
+Description: ${result.imageContents.description}
 
-=== Raw Text Found ===
-${result.debug.rawText || 'No text found'}
-
-=== All Text Items (Unfiltered) ===
-${result.debug.allDetectedText.map(item => 
+All text found:
+${result.imageContents.allTextFound.map(item => 
     `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
 ).join('\n')}
 
-=== Number Processing ===
-1. Text items found: ${result.debug.allDetectedText.length}
-2. Potential numbers found: ${result.debug.detectedItems.length}
-3. Valid sail numbers: ${result.debug.validNumbers.length}
+=== B) SAIL NUMBER ANALYSIS ===
+Sail numbers found: ${result.sailNumbers.found ? 'YES' : 'NO'}
+${result.sailNumbers.numbers.map(num => 
+    `• Number ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+    - Found in: "${num.originalText}"
+    - Location: ${num.location}`
+).join('\n') || 'No valid sail numbers detected'}
 
-=== Potential Numbers ===
-${result.debug.detectedItems.map(item => 
-    `• ${item.number} (from "${item.originalText}")
-    - Confidence: ${(item.confidence * 100).toFixed(1)}%
-    - Valid: ${isValidSailNumber(item.number) ? 'Yes' : 'No'}`
-).join('\n') || 'None found'}
-
-=== Final Valid Numbers ===
-${result.debug.validNumbers.map(v => 
-    `• ${v.number} (${(v.confidence * 100).toFixed(1)}% confident)`
-).join('\n') || 'None found'}
-
-=== Processing Notes ===
-- Looking for numbers between 10 and 999999
-- Minimum confidence threshold: 60%
-- Converting O/o to 0, I/l to 1
+=== PROCESSING INFO ===
+Processing time: ${result.debug.processingTime}
+Status: ${result.debug.status}
                 `.trim();
 
                 debugDiv.textContent = debugText;
