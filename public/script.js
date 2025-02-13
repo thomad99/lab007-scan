@@ -82,13 +82,11 @@ async function init() {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         try {
-            // Add loading indicator
             resultDiv.textContent = 'Scanning image...';
             console.log('Starting scan of frame');
             
-            // Convert canvas to blob before processing
             const blob = await new Promise(resolve => {
-                canvas.toBlob(resolve, 'image/jpeg', 0.95); // Higher quality JPEG
+                canvas.toBlob(resolve, 'image/jpeg', 0.95);
             });
             
             if (!blob) {
@@ -105,35 +103,40 @@ async function init() {
                 }
             });
 
-            // Log the raw text found
             console.log('Raw text found:', result.data.text);
 
-            // Extract numbers from the text
-            const numbers = result.data.text.match(/\d+/g);
+            // Group adjacent numbers together
+            const text = result.data.text;
+            const numberMatches = text.match(/\d+/g);
+            const groupedNumbers = numberMatches ? 
+                numberMatches
+                    .map(num => parseInt(num))
+                    .filter(num => num > 9) // Only keep numbers with 2 or more digits
+                : [];
             
-            if (numbers && numbers.length > 0) {
-                console.log('Numbers found:', numbers);
-                // Send numbers to backend
-                await saveNumbers(numbers);
-                resultDiv.textContent = `Detected numbers: ${numbers.join(', ')}`;
+            if (groupedNumbers.length > 0) {
+                console.log('Numbers found:', groupedNumbers);
+                await saveNumbers(groupedNumbers);
+                resultDiv.textContent = `Detected sail numbers: ${groupedNumbers.join(', ')}`;
                 
                 // Draw rectangles around detected numbers
                 const words = result.data.words;
                 context.strokeStyle = 'red';
                 context.lineWidth = 2;
                 for (const word of words) {
-                    if (/\d+/.test(word.text)) {
+                    if (/\d{2,}/.test(word.text)) { // Only highlight numbers with 2 or more digits
                         const { x0, y0, x1, y1 } = word.bbox;
                         context.strokeRect(x0, y0, x1-x0, y1-y0);
                     }
                 }
             } else {
-                console.log('No numbers detected in frame');
-                resultDiv.textContent = 'No numbers detected - try adjusting camera';
+                console.log('No valid sail numbers detected in frame');
+                resultDiv.textContent = 'No valid sail numbers detected - try adjusting camera';
             }
 
             if (debugCheckbox.checked) {
                 debugDiv.textContent = `Raw text: ${result.data.text}\n` +
+                    `Grouped numbers: ${groupedNumbers.join(', ')}\n` +
                     `Confidence: ${result.data.confidence}%\n` +
                     `Processing time: ${Date.now() - startTime}ms`;
             }
@@ -142,8 +145,8 @@ async function init() {
             resultDiv.textContent = 'Error processing image: ' + err.message;
         }
 
-        // Continue scanning with a longer delay (3 seconds)
-        setTimeout(scanFrame, 3000);
+        // Continue scanning every 5 seconds instead of 3
+        setTimeout(scanFrame, 5000);
     }
 }
 
