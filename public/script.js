@@ -82,7 +82,8 @@ async function init() {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         try {
-            resultDiv.textContent = 'Scanning image...';
+            resultDiv.textContent = 'Scanning image with Azure Vision...';
+            debugDiv.textContent = 'Starting scan...';
             
             // Convert canvas to blob
             const blob = await new Promise(resolve => {
@@ -93,21 +94,24 @@ async function init() {
             const formData = new FormData();
             formData.append('image', blob);
 
+            debugDiv.textContent += '\nSending image to Azure...';
             const response = await fetch('/api/scan', {
                 method: 'POST',
                 body: formData
             });
 
             if (!response.ok) {
-                throw new Error('Failed to process image');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to process image');
             }
 
             const result = await response.json();
+            debugDiv.textContent += '\nReceived response from Azure';
             
             if (result.numbers && result.numbers.length > 0) {
-                console.log('Numbers found:', result.numbers);
+                console.log('Azure Vision found numbers:', result.numbers);
                 await saveNumbers(result.numbers);
-                resultDiv.textContent = `Detected sail numbers: ${result.numbers.join(', ')}`;
+                resultDiv.textContent = `Azure detected sail numbers: ${result.numbers.join(', ')}`;
                 
                 // Draw detection boxes if coordinates are returned
                 if (result.boxes) {
@@ -122,16 +126,45 @@ async function init() {
                         );
                     });
                 }
+
+                if (debugCheckbox.checked) {
+                    debugDiv.textContent = `
+Service: Azure Computer Vision
+Numbers found: ${JSON.stringify(result.numbers)}
+Confidence levels: ${JSON.stringify(result.debug.validNumbers)}
+Original text detected: ${result.debug.detectedItems.map(item => item.originalText).join(', ')}
+Total items detected: ${result.debug.detectedItems.length}
+Valid numbers found: ${result.debug.validNumbers.length}
+Boxes detected: ${result.boxes.length}
+                    `.trim();
+                }
             } else {
-                resultDiv.textContent = 'No valid sail numbers detected';
+                resultDiv.textContent = 'Azure Vision: No valid sail numbers detected';
+                if (debugCheckbox.checked) {
+                    debugDiv.textContent += '\nNo valid numbers found in the image';
+                }
             }
 
         } catch (err) {
-            console.error('Error processing image:', err);
-            resultDiv.textContent = 'Error processing image: ' + err.message;
+            console.error('Azure Vision error:', err);
+            resultDiv.textContent = 'Azure Vision error: ' + err.message;
+            if (debugCheckbox.checked) {
+                debugDiv.textContent += '\nError: ' + err.message;
+            }
         }
 
-        setTimeout(scanFrame, 8000);
+        // Show a countdown for next scan
+        let countdown = 15;
+        const updateCountdown = setInterval(() => {
+            if (countdown > 0 && isScanning) {
+                resultDiv.textContent += ` (Next scan in ${countdown}s)`;
+                countdown--;
+            } else {
+                clearInterval(updateCountdown);
+            }
+        }, 1000);
+
+        setTimeout(scanFrame, 15000);
     }
 
     document.getElementById('trainBtn').addEventListener('click', () => {
