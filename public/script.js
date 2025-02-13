@@ -122,56 +122,104 @@ async function init() {
                         resultDiv.textContent = `Processing: ${Math.floor(m.progress * 100)}%`;
                     }
                 },
-                // Tesseract configuration for number recognition
-                tessedit_char_whitelist: '0123456789',
-                tessedit_pageseg_mode: '7', // Treat the image as a single text line
-                preserve_interword_spaces: '0'
+                // Updated Tesseract configuration
+                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                tessedit_pageseg_mode: '3', // Fully automatic page segmentation
+                preserve_interword_spaces: '1'
             });
 
             console.log('Raw text found:', result.data.text);
 
-            // Process numbers with sail number specific rules
-            const text = result.data.text.replace(/[^0-9]/g, ''); // Remove non-numbers
-            const numberMatches = text.match(/\d{2,6}/g); // Match groups of 2-6 digits
-            const groupedNumbers = numberMatches ? 
-                numberMatches
-                    .map(num => parseInt(num))
-                    .filter(num => num >= 10 && num.toString().length <= 6) // Validate length
-                : [];
-            
-            if (groupedNumbers.length > 0) {
-                // Filter out low confidence matches
-                const highConfidenceNumbers = groupedNumbers.filter((_, index) => 
-                    result.data.confidence > 60 // Only keep numbers with >60% confidence
-                );
+            // Process text to find sail numbers
+            const words = result.data.words;
+            let potentialNumbers = [];
 
-                if (highConfidenceNumbers.length > 0) {
-                    console.log('Numbers found:', highConfidenceNumbers);
-                    await saveNumbers(highConfidenceNumbers);
-                    resultDiv.textContent = `Detected sail numbers: ${highConfidenceNumbers.join(', ')}`;
+            // Process each word found in the image
+            words.forEach(word => {
+                // Remove any letters, keeping only numbers
+                const numberOnly = word.text.replace(/[^0-9]/g, '');
+                const confidence = word.confidence;
+
+                // Check if we have a valid number (2-6 digits)
+                if (numberOnly.length >= 2 && numberOnly.length <= 6) {
+                    // Check for reversed numbers
+                    const forward = parseInt(numberOnly);
+                    const reversed = parseInt(numberOnly.split('').reverse().join(''));
                     
-                    // Draw rectangles around detected numbers
-                    const words = result.data.words;
-                    context.strokeStyle = 'red';
-                    context.lineWidth = 2;
-                    for (const word of words) {
-                        if (/^\d{2,6}$/.test(word.text)) { // Only highlight valid sail numbers
-                            const { x0, y0, x1, y1 } = word.bbox;
-                            context.strokeRect(x0, y0, x1-x0, y1-y0);
-                        }
+                    potentialNumbers.push({
+                        number: forward,
+                        confidence: confidence,
+                        bbox: word.bbox,
+                        isReversed: false
+                    });
+
+                    // Add reversed number if it's different
+                    if (forward !== reversed) {
+                        potentialNumbers.push({
+                            number: reversed,
+                            confidence: confidence,
+                            bbox: word.bbox,
+                            isReversed: true
+                        });
+                    }
+                }
+            });
+
+            // Group similar numbers (handle both sides of sail)
+            const groupedNumbers = [];
+            potentialNumbers.forEach(num => {
+                const existing = groupedNumbers.find(g => g.number === num.number);
+                if (existing) {
+                    // Keep the version with higher confidence
+                    if (num.confidence > existing.confidence) {
+                        existing.confidence = num.confidence;
+                        existing.bbox = num.bbox;
+                        existing.isReversed = num.isReversed;
                     }
                 } else {
-                    resultDiv.textContent = 'Numbers detected but confidence too low';
+                    groupedNumbers.push(num);
                 }
+            });
+
+            // Filter by confidence and sort by confidence
+            const validNumbers = groupedNumbers
+                .filter(num => num.confidence > 60)
+                .sort((a, b) => b.confidence - a.confidence);
+
+            if (validNumbers.length > 0) {
+                console.log('Numbers found:', validNumbers);
+                
+                // Save all valid numbers found
+                const numbersToSave = validNumbers.map(n => n.number);
+                await saveNumbers(numbersToSave);
+                
+                // Display results
+                resultDiv.textContent = `Detected sail numbers: ${numbersToSave.join(', ')}`;
+                
+                // Draw rectangles around detected numbers
+                context.strokeStyle = 'red';
+                context.lineWidth = 2;
+                validNumbers.forEach(num => {
+                    const { x0, y0, x1, y1 } = num.bbox;
+                    context.strokeRect(x0, y0, x1-x0, y1-y0);
+                    
+                    // Add confidence label above rectangle
+                    context.fillStyle = 'red';
+                    context.font = '16px Arial';
+                    context.fillText(
+                        `${num.number} (${Math.round(num.confidence)}%)${num.isReversed ? ' R' : ''}`,
+                        x0,
+                        y0 - 5
+                    );
+                });
             } else {
-                console.log('No valid sail numbers detected in frame');
                 resultDiv.textContent = 'No valid sail numbers detected - try adjusting camera';
             }
 
             if (debugCheckbox.checked) {
                 debugDiv.textContent = `Raw text: ${result.data.text}\n` +
-                    `Grouped numbers: ${groupedNumbers.join(', ')}\n` +
-                    `Confidence: ${result.data.confidence}%\n` +
+                    `All potential numbers: ${JSON.stringify(potentialNumbers, null, 2)}\n` +
+                    `Valid numbers: ${JSON.stringify(validNumbers, null, 2)}\n` +
                     `Processing time: ${Date.now() - startTime}ms`;
             }
         } catch (err) {
@@ -179,7 +227,6 @@ async function init() {
             resultDiv.textContent = 'Error processing image: ' + err.message;
         }
 
-        // Increase scan interval to 8 seconds to allow for better processing
         setTimeout(scanFrame, 8000);
     }
 
