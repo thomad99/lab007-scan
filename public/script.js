@@ -108,6 +108,42 @@ async function init() {
             const result = await response.json();
             debugDiv.textContent += '\nReceived response from Azure';
             
+            // Always show what Azure found, even if no valid sail numbers
+            if (debugCheckbox.checked) {
+                let debugText = `
+=== Azure Vision Analysis ===
+Raw text found in image:
+${result.debug.rawText || 'No text found'}
+
+=== Processing Steps ===
+1. All detected text items:
+${result.debug.allDetectedText.map(item => 
+    `- Text: "${item.text}" (Confidence: ${(item.confidence * 100).toFixed(1)}%)`
+).join('\n')}
+
+2. Potential Numbers Found:
+${result.debug.detectedItems.map(item => 
+    `- Number: ${item.number} (From text: "${item.originalText}")
+     Confidence: ${(item.confidence * 100).toFixed(1)}%`
+).join('\n')}
+
+3. Valid Sail Numbers:
+${result.debug.validNumbers.length > 0 ? 
+    result.debug.validNumbers.map(v => 
+        `- ${v.number} (Confidence: ${(v.confidence * 100).toFixed(1)}%)`
+    ).join('\n') : 
+    'None found'}
+
+=== Summary ===
+Total text items found: ${result.debug.allDetectedText.length}
+Potential numbers found: ${result.debug.detectedItems.length}
+Valid sail numbers: ${result.debug.validNumbers.length}
+                `.trim();
+
+                debugDiv.textContent = debugText;
+            }
+
+            // Update the main result display
             if (result.numbers && result.numbers.length > 0) {
                 console.log('Azure Vision found numbers:', result.numbers);
                 await saveNumbers(result.numbers);
@@ -126,23 +162,8 @@ async function init() {
                         );
                     });
                 }
-
-                if (debugCheckbox.checked) {
-                    debugDiv.textContent = `
-Service: Azure Computer Vision
-Numbers found: ${JSON.stringify(result.numbers)}
-Confidence levels: ${JSON.stringify(result.debug.validNumbers)}
-Original text detected: ${result.debug.detectedItems.map(item => item.originalText).join(', ')}
-Total items detected: ${result.debug.detectedItems.length}
-Valid numbers found: ${result.debug.validNumbers.length}
-Boxes detected: ${result.boxes.length}
-                    `.trim();
-                }
             } else {
                 resultDiv.textContent = 'Azure Vision: No valid sail numbers detected';
-                if (debugCheckbox.checked) {
-                    debugDiv.textContent += '\nNo valid numbers found in the image';
-                }
             }
 
         } catch (err) {
