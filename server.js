@@ -1,6 +1,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -41,6 +42,8 @@ pool.connect()
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+const upload = multer({ dest: 'training_data/' });
+
 // API endpoint to save numbers
 app.post('/api/numbers', async (req, res) => {
     const { numbers } = req.body;
@@ -73,6 +76,25 @@ app.get('/api/numbers', async (req, res) => {
     }
 });
 
+// Add training endpoint
+app.post('/api/train', upload.single('image'), async (req, res) => {
+    try {
+        const { number } = req.body;
+        const imagePath = req.file.path;
+        
+        // Store training data
+        await pool.query(
+            'INSERT INTO training_data (number, image_path, timestamp) VALUES ($1, $2, NOW())',
+            [number, imagePath]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error saving training data:', err);
+        res.status(500).json({ error: 'Failed to save training data' });
+    }
+});
+
 // Make database connection more resilient
 pool.on('error', (err) => {
     console.error('Unexpected database error:', err);
@@ -95,6 +117,11 @@ app.get('/health', (req, res) => {
                 timestamp: new Date().toISOString()
             });
         });
+});
+
+// Add route to serve results page
+app.get('/results', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
 app.listen(port, () => {
