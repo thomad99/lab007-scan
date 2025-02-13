@@ -166,6 +166,15 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
             const readResults = operationResult.analyzeResult.readResults;
             
+            // Get all raw text first
+            const allDetectedText = readResults.flatMap(page => page.lines.map(line => ({
+                text: line.text,
+                confidence: line.confidence || 0
+            })));
+
+            // Log all detected text
+            console.log('All detected text:', allDetectedText);
+
             // Group nearby lines that might be part of the same sail number
             const lines = readResults.flatMap(page => page.lines);
             const groups = groupNearbyLines(lines);
@@ -211,6 +220,8 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
             numbers: validNumbers.map(v => v.number),
             boxes: boxes,
             debug: {
+                rawText: readResults.map(page => page.lines.map(line => line.text).join('\n')).join('\n'),
+                allDetectedText: allDetectedText,
                 detectedItems: detectedItems,
                 validNumbers: validNumbers
             }
