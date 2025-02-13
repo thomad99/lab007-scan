@@ -119,13 +119,16 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         console.log('Azure Endpoint:', computerVisionEndpoint);
         console.log('Azure Key configured:', computerVisionKey ? 'Yes (key hidden)' : 'No');
 
-        // Convert the file buffer to a URL-friendly format
-        const imageUrl = {
-            source: req.file.buffer
+        // Create request parameters with the image buffer
+        const options = {
+            model: 'latest'
         };
 
         // Call Azure Computer Vision API with updated method
-        const result = await computerVisionClient.read(imageUrl);
+        const result = await computerVisionClient.readInStream(
+            req.file.buffer,
+            options
+        );
         
         // Get operation location from the response
         const operationLocation = result.operationLocation;
