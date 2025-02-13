@@ -44,7 +44,13 @@ pool.connect()
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const upload = multer({ dest: 'training_data/' });
+// Separate multer instance for training data
+const trainUpload = multer({ 
+    dest: 'training_data/',
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
 
 // Add these environment variables in Render
 const computerVisionKey = process.env.AZURE_VISION_KEY;
@@ -88,8 +94,8 @@ app.get('/api/numbers', async (req, res) => {
     }
 });
 
-// Add training endpoint
-app.post('/api/train', upload.single('image'), async (req, res) => {
+// Update training endpoint to use trainUpload
+app.post('/api/train', trainUpload.single('image'), async (req, res) => {
     try {
         const { number } = req.body;
         const imagePath = req.file.path;
@@ -112,22 +118,23 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
     try {
         console.log('Using Azure Computer Vision for OCR...');
         
-        if (!req.file) {
+        if (!req.file || !req.file.buffer) {
             throw new Error('No image file received');
         }
+
+        console.log('Image received:', {
+            size: req.file.size,
+            mimetype: req.file.mimetype,
+            bufferLength: req.file.buffer.length
+        });
 
         console.log('Azure Endpoint:', computerVisionEndpoint);
         console.log('Azure Key configured:', computerVisionKey ? 'Yes (key hidden)' : 'No');
 
-        // Create request parameters with the image buffer
-        const options = {
-            model: 'latest'
-        };
-
-        // Call Azure Computer Vision API with updated method
+        // Call Azure Computer Vision API
         const result = await computerVisionClient.readInStream(
             req.file.buffer,
-            options
+            { language: 'en' }
         );
         
         // Get operation location from the response
