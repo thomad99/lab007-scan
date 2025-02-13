@@ -116,22 +116,34 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
         console.log('Azure Endpoint:', computerVisionEndpoint);
         console.log('Azure Key configured:', computerVisionKey ? 'Yes (key hidden)' : 'No');
 
-        // Call Azure Computer Vision API with enhanced settings
-        const result = await computerVisionClient.recognizeText(imageBuffer, {
-            language: 'en',
-            detectOrientation: true,
-            model: 'latest'
-        });
+        // Call Azure Computer Vision API with updated method
+        const result = await computerVisionClient.read(imageBuffer);
         
-        console.log('Raw Azure Vision response:', result);
+        // Get operation location from the response
+        const operationLocation = result.operationLocation;
+        
+        // Extract the operation ID from the operation location URL
+        const operationId = operationLocation.split('/').pop();
+        
+        // Wait for the results
+        let operationResult;
+        do {
+            operationResult = await computerVisionClient.getReadResult(operationId);
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        } while (operationResult.status === 'Running' || operationResult.status === 'NotStarted');
+
+        console.log('Raw Azure Vision response:', operationResult);
 
         // Process the results with enhanced logic
         const detectedItems = [];
         const boxes = [];
 
-        if (result.lines) {
+        if (operationResult.analyzeResult && operationResult.analyzeResult.readResults) {
+            const readResults = operationResult.analyzeResult.readResults;
+            
             // Group nearby lines that might be part of the same sail number
-            const groups = groupNearbyLines(result.lines);
+            const lines = readResults.flatMap(page => page.lines);
+            const groups = groupNearbyLines(lines);
 
             groups.forEach(group => {
                 // Combine text from nearby lines
@@ -181,7 +193,7 @@ app.post('/api/scan', upload.single('image'), async (req, res) => {
 
     } catch (err) {
         console.error('Azure Vision error:', err);
-        res.status(500).json({ error: 'Failed to process image' });
+        res.status(500).json({ error: 'Failed to process image: ' + err.message });
     }
 });
 
