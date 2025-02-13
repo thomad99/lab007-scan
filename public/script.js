@@ -82,152 +82,215 @@ async function init() {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         try {
-            resultDiv.textContent = 'Scanning image...';
-            console.log('Starting scan of frame');
-            
-            // Enhance image contrast with softer threshold
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            
-            // More sophisticated image processing
-            const threshold = 160; // Increased from 128 for softer contrast
-            const contrast = 1.2; // Contrast multiplier
-            
-            for (let i = 0; i < data.length; i += 4) {
-                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                // Apply contrast before threshold
-                const adjusted = ((avg - 128) * contrast) + 128;
-                // Softer thresholding
-                const value = adjusted > threshold ? 255 : 
-                             adjusted < threshold - 30 ? 0 : // Clear black
-                             adjusted; // Keep grayscale for middle values
-                
-                data[i] = data[i + 1] = data[i + 2] = value;
-            }
-            context.putImageData(imageData, 0, 0);
+            resultDiv.textContent = 'Scanning image with multiple filters...';
+            console.log('Starting multi-filter scan');
 
-            const blob = await new Promise(resolve => {
-                canvas.toBlob(resolve, 'image/jpeg', 1.0); // Maximum quality
-            });
-            
-            if (!blob) {
-                throw new Error('Failed to create image blob');
-            }
-
-            const startTime = Date.now();
-            const result = await Tesseract.recognize(blob, 'eng', {
-                logger: m => {
-                    console.log('Tesseract status:', m.status, m.progress);
-                    if (m.status === 'recognizing text') {
-                        resultDiv.textContent = `Processing: ${Math.floor(m.progress * 100)}%`;
-                    }
+            // Define different filter configurations
+            const filterConfigs = [
+                {
+                    name: 'High Contrast B&W',
+                    threshold: 150,
+                    contrast: 1.5,
+                    brightness: 10
                 },
-                // Updated Tesseract configuration
-                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-                tessedit_pageseg_mode: '3', // Fully automatic page segmentation
-                preserve_interword_spaces: '1'
-            });
+                {
+                    name: 'Softer Contrast',
+                    threshold: 160,
+                    contrast: 1.2,
+                    brightness: 0
+                },
+                {
+                    name: 'Sharp Dark',
+                    threshold: 140,
+                    contrast: 1.8,
+                    brightness: -10
+                },
+                {
+                    name: 'Bright Sharp',
+                    threshold: 170,
+                    contrast: 1.6,
+                    brightness: 20
+                }
+            ];
 
-            console.log('Raw text found:', result.data.text);
+            let bestResult = null;
+            let highestConfidence = 0;
 
-            // Process text to find sail numbers
-            const words = result.data.words;
-            let potentialNumbers = [];
+            // Try each filter configuration
+            for (const config of filterConfigs) {
+                resultDiv.textContent = `Trying ${config.name} filter...`;
+                console.log(`Processing with ${config.name}`);
 
-            // Process each word found in the image
-            words.forEach(word => {
-                // Remove any letters, keeping only numbers
-                const numberOnly = word.text.replace(/[^0-9]/g, '');
-                const confidence = word.confidence;
+                // Create a copy of the original image data
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempContext = tempCanvas.getContext('2d');
+                tempContext.drawImage(canvas, 0, 0);
 
-                // Check if we have a valid number (2-6 digits)
-                if (numberOnly.length >= 2 && numberOnly.length <= 6) {
-                    // Check for reversed numbers
-                    const forward = parseInt(numberOnly);
-                    const reversed = parseInt(numberOnly.split('').reverse().join(''));
+                // Apply this filter configuration
+                const imageData = tempContext.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const data = imageData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
                     
-                    potentialNumbers.push({
-                        number: forward,
-                        confidence: confidence,
-                        bbox: word.bbox,
-                        isReversed: false
-                    });
-
-                    // Add reversed number if it's different
-                    if (forward !== reversed) {
-                        potentialNumbers.push({
-                            number: reversed,
-                            confidence: confidence,
-                            bbox: word.bbox,
-                            isReversed: true
-                        });
-                    }
+                    const gray = (r * 0.299 + g * 0.587 + b * 0.114);
+                    let adjusted = ((gray - 128) * config.contrast) + 128 + config.brightness;
+                    
+                    const localThreshold = config.threshold + (Math.random() * 20 - 10);
+                    const value = adjusted > localThreshold ? 255 : 
+                                 adjusted < (localThreshold - 50) ? 0 : 
+                                 adjusted;
+                    
+                    data[i] = data[i + 1] = data[i + 2] = value;
                 }
-            });
+                tempContext.putImageData(imageData, 0, 0);
 
-            // Group similar numbers (handle both sides of sail)
-            const groupedNumbers = [];
-            potentialNumbers.forEach(num => {
-                const existing = groupedNumbers.find(g => g.number === num.number);
-                if (existing) {
-                    // Keep the version with higher confidence
-                    if (num.confidence > existing.confidence) {
-                        existing.confidence = num.confidence;
-                        existing.bbox = num.bbox;
-                        existing.isReversed = num.isReversed;
-                    }
-                } else {
-                    groupedNumbers.push(num);
-                }
-            });
-
-            // Filter by confidence and sort by confidence
-            const validNumbers = groupedNumbers
-                .filter(num => num.confidence > 60)
-                .sort((a, b) => b.confidence - a.confidence);
-
-            if (validNumbers.length > 0) {
-                console.log('Numbers found:', validNumbers);
+                // Process this version
+                const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', 1.0));
                 
-                // Save all valid numbers found
-                const numbersToSave = validNumbers.map(n => n.number);
+                const result = await Tesseract.recognize(blob, 'eng', {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            resultDiv.textContent = `${config.name}: ${Math.floor(m.progress * 100)}%`;
+                        }
+                    },
+                    tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                    tessedit_pageseg_mode: '3',
+                    preserve_interword_spaces: '1',
+                    tessjs_create_pdf: '0',
+                    tessjs_create_hocr: '0',
+                    tessedit_do_invert: '0',
+                    tessedit_enable_doc_dict: '0',
+                    tessedit_unrej_any_wd: '1',
+                    textord_heavy_nr: '1',
+                    textord_min_linesize: '2.5',
+                    tessedit_ocr_engine_mode: '2',
+                    lstm_choice_mode: '2',
+                    tessjs_image_enhance: '1'
+                });
+
+                // Process numbers from this result
+                const numbers = processDetectedText(result.data);
+                
+                // Check if this result is better
+                if (numbers.length > 0) {
+                    const avgConfidence = numbers.reduce((sum, n) => sum + n.confidence, 0) / numbers.length;
+                    if (avgConfidence > highestConfidence) {
+                        highestConfidence = avgConfidence;
+                        bestResult = {
+                            numbers,
+                            filteredCanvas: tempCanvas,
+                            filterName: config.name
+                        };
+                    }
+                }
+            }
+
+            // Use the best result
+            if (bestResult) {
+                console.log(`Best results from ${bestResult.filterName}:`, bestResult.numbers);
+                
+                // Copy the best filtered image to the main canvas
+                context.drawImage(bestResult.filteredCanvas, 0, 0);
+                
+                // Save and display the numbers
+                const numbersToSave = bestResult.numbers.map(n => n.number);
                 await saveNumbers(numbersToSave);
                 
-                // Display results
-                resultDiv.textContent = `Detected sail numbers: ${numbersToSave.join(', ')}`;
+                resultDiv.textContent = `Detected sail numbers: ${numbersToSave.join(', ')} (using ${bestResult.filterName})`;
                 
-                // Draw rectangles around detected numbers
-                context.strokeStyle = 'red';
-                context.lineWidth = 2;
-                validNumbers.forEach(num => {
-                    const { x0, y0, x1, y1 } = num.bbox;
-                    context.strokeRect(x0, y0, x1-x0, y1-y0);
-                    
-                    // Add confidence label above rectangle
-                    context.fillStyle = 'red';
-                    context.font = '16px Arial';
-                    context.fillText(
-                        `${num.number} (${Math.round(num.confidence)}%)${num.isReversed ? ' R' : ''}`,
-                        x0,
-                        y0 - 5
-                    );
-                });
+                // Draw rectangles and confidence levels
+                drawDetectionBoxes(context, bestResult.numbers);
+
+                if (debugCheckbox.checked) {
+                    debugDiv.textContent = `Best filter: ${bestResult.filterName}\n` +
+                        `Numbers found: ${JSON.stringify(bestResult.numbers, null, 2)}\n` +
+                        `Average confidence: ${highestConfidence.toFixed(1)}%`;
+                }
             } else {
-                resultDiv.textContent = 'No valid sail numbers detected - try adjusting camera';
+                resultDiv.textContent = 'No valid sail numbers detected with any filter';
             }
 
-            if (debugCheckbox.checked) {
-                debugDiv.textContent = `Raw text: ${result.data.text}\n` +
-                    `All potential numbers: ${JSON.stringify(potentialNumbers, null, 2)}\n` +
-                    `Valid numbers: ${JSON.stringify(validNumbers, null, 2)}\n` +
-                    `Processing time: ${Date.now() - startTime}ms`;
-            }
         } catch (err) {
             console.error('Error processing image:', err);
             resultDiv.textContent = 'Error processing image: ' + err.message;
         }
 
-        setTimeout(scanFrame, 8000);
+        // Wait longer between scans since we're doing multiple processes
+        setTimeout(scanFrame, 15000);
+    }
+
+    // Helper function to process detected text
+    function processDetectedText(data) {
+        const words = data.words;
+        let potentialNumbers = [];
+
+        words.forEach(word => {
+            const numberOnly = word.text.replace(/[^0-9]/g, '');
+            const confidence = word.confidence;
+
+            if (numberOnly.length >= 2 && numberOnly.length <= 6) {
+                const forward = parseInt(numberOnly);
+                const reversed = parseInt(numberOnly.split('').reverse().join(''));
+                
+                potentialNumbers.push({
+                    number: forward,
+                    confidence: confidence,
+                    bbox: word.bbox,
+                    isReversed: false
+                });
+
+                if (forward !== reversed) {
+                    potentialNumbers.push({
+                        number: reversed,
+                        confidence: confidence,
+                        bbox: word.bbox,
+                        isReversed: true
+                    });
+                }
+            }
+        });
+
+        // Group and filter numbers
+        const groupedNumbers = [];
+        potentialNumbers.forEach(num => {
+            const existing = groupedNumbers.find(g => g.number === num.number);
+            if (existing) {
+                if (num.confidence > existing.confidence) {
+                    existing.confidence = num.confidence;
+                    existing.bbox = num.bbox;
+                    existing.isReversed = num.isReversed;
+                }
+            } else {
+                groupedNumbers.push(num);
+            }
+        });
+
+        return groupedNumbers
+            .filter(num => num.confidence > 45)
+            .sort((a, b) => b.confidence - a.confidence);
+    }
+
+    // Helper function to draw detection boxes
+    function drawDetectionBoxes(context, numbers) {
+        context.strokeStyle = 'red';
+        context.lineWidth = 2;
+        numbers.forEach(num => {
+            const { x0, y0, x1, y1 } = num.bbox;
+            context.strokeRect(x0, y0, x1-x0, y1-y0);
+            
+            context.fillStyle = 'red';
+            context.font = '16px Arial';
+            context.fillText(
+                `${num.number} (${Math.round(num.confidence)}%)${num.isReversed ? ' R' : ''}`,
+                x0,
+                y0 - 5
+            );
+        });
     }
 
     document.getElementById('trainBtn').addEventListener('click', () => {
