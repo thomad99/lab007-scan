@@ -19,7 +19,7 @@
             max-width: 800px;
             margin: 0 auto;
             background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
+            padding: 0 20px 20px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
@@ -97,10 +97,20 @@
                 font-size: 2em;
             }
         }
+
+        .header-image {
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+            margin: 0 auto 20px;
+            display: block;
+            border-radius: 10px 10px 0 0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <img src="/logo%20blue.jpeg" alt="Sail Numbers Logo" class="header-image">
         <h1>Sail Number Results</h1>
         <button class="refresh-btn" onclick="loadResults()">Refresh Results</button>
         <table class="results-table">
@@ -154,4 +164,4 @@
         setInterval(loadResults, 30000);
     </script>
 </body>
-</html>
+</html> 
