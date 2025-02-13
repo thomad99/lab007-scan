@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Azure Vision Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-section {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        #preview {
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        #results {
+            white-space: pre-wrap;
+            font-family: monospace;
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .loading {
+            display: none;
+            color: #666;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Azure Vision Test</h1>
+    <div class="upload-section">
+        <input type="file" id="imageInput" accept="image/*">
+        <p>Select an image to analyze</p>
+    </div>
+    <img id="preview" style="display: none;">
+    <div id="loading" class="loading">Analyzing image...</div>
+    <div id="results"></div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+        const results = document.getElementById('results');
+        const loading = document.getElementById('loading');
+
+        imageInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Show preview
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            
+            // Clear previous results and show loading
+            results.textContent = '';
+            loading.style.display = 'block';
+
+            // Send to Azure
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to analyze image');
+                }
+
+                const data = await response.json();
+                
+                // Display results
+                results.innerHTML = `
+=== Azure Vision Analysis ===
+Time: ${new Date().toLocaleString()}
+
+Raw Text Found:
+${formatTextResults(data.rawText)}
+
+Detected Items:
+${formatDetectedItems(data.detectedItems)}
+
+Processing Info:
+- Processing Time: ${data.processingTime}
+- Status: ${data.status}
+                `.trim();
+
+            } catch (err) {
+                results.textContent = 'Error: ' + err.message;
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        function formatTextResults(text) {
+            if (!text || text.length === 0) return 'No text found';
+            return text.map(item => 
+                `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
+            ).join('\n');
+        }
+
+        function formatDetectedItems(items) {
+            if (!items || items.length === 0) return 'No items detected';
+            return items.map(item => 
+                `• Type: ${item.type}\n  Text: "${item.text}"\n  Confidence: ${(item.confidence * 100).toFixed(1)}%`
+            ).join('\n\n');
+        }
+    </script>
+</body>
+</html>
