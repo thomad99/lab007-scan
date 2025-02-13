@@ -76,15 +76,20 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to analyze image');
+                    const errorData = await response.json();
+                    if (response.status === 429) {
+                        throw new Error('Rate limit exceeded. Please wait a minute before trying again.');
+                    }
+                    throw new Error(errorData.error || 'Failed to analyze image');
                 }
 
                 const data = await response.json();
                 
-                // Display complete results including raw Azure response
+                // Display results
                 results.innerHTML = `
 === Azure Vision Analysis ===
 Time: ${new Date().toLocaleString()}
+${data.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
 
 Raw Text Found:
 ${formatTextResults(data.rawText)}
@@ -95,13 +100,19 @@ ${formatDetectedItems(data.detectedItems)}
 Processing Info:
 - Processing Time: ${data.processingTime}
 - Status: ${data.status}
+${data.status !== 'Succeeded' ? '- Note: Rate limited, results may be incomplete' : ''}
 
 === Complete Azure Response ===
 ${JSON.stringify(data.rawResponse, null, 2)}
                 `.trim();
 
             } catch (err) {
-                results.textContent = 'Error: ' + err.message;
+                results.innerHTML = `
+⚠️ Error: ${err.message}
+
+Note: The free tier of Azure Vision has strict rate limits.
+If you see a rate limit error, please wait about a minute before trying again.
+                `.trim();
             } finally {
                 loading.style.display = 'none';
             }
