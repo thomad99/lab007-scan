@@ -85,8 +85,21 @@ async function init() {
             resultDiv.textContent = 'Scanning image...';
             console.log('Starting scan of frame');
             
+            // Enhance image contrast
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // Increase contrast and convert to black and white
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                const threshold = 128;
+                const value = avg > threshold ? 255 : 0;
+                data[i] = data[i + 1] = data[i + 2] = value;
+            }
+            context.putImageData(imageData, 0, 0);
+
             const blob = await new Promise(resolve => {
-                canvas.toBlob(resolve, 'image/jpeg', 0.95);
+                canvas.toBlob(resolve, 'image/jpeg', 1.0); // Maximum quality
             });
             
             if (!blob) {
@@ -100,34 +113,47 @@ async function init() {
                     if (m.status === 'recognizing text') {
                         resultDiv.textContent = `Processing: ${Math.floor(m.progress * 100)}%`;
                     }
-                }
+                },
+                // Tesseract configuration for number recognition
+                tessedit_char_whitelist: '0123456789',
+                tessedit_pageseg_mode: '7', // Treat the image as a single text line
+                preserve_interword_spaces: '0'
             });
 
             console.log('Raw text found:', result.data.text);
 
-            // Group adjacent numbers together
-            const text = result.data.text;
-            const numberMatches = text.match(/\d+/g);
+            // Process numbers with sail number specific rules
+            const text = result.data.text.replace(/[^0-9]/g, ''); // Remove non-numbers
+            const numberMatches = text.match(/\d{2,6}/g); // Match groups of 2-6 digits
             const groupedNumbers = numberMatches ? 
                 numberMatches
                     .map(num => parseInt(num))
-                    .filter(num => num > 9) // Only keep numbers with 2 or more digits
+                    .filter(num => num >= 10 && num.toString().length <= 6) // Validate length
                 : [];
             
             if (groupedNumbers.length > 0) {
-                console.log('Numbers found:', groupedNumbers);
-                await saveNumbers(groupedNumbers);
-                resultDiv.textContent = `Detected sail numbers: ${groupedNumbers.join(', ')}`;
-                
-                // Draw rectangles around detected numbers
-                const words = result.data.words;
-                context.strokeStyle = 'red';
-                context.lineWidth = 2;
-                for (const word of words) {
-                    if (/\d{2,}/.test(word.text)) { // Only highlight numbers with 2 or more digits
-                        const { x0, y0, x1, y1 } = word.bbox;
-                        context.strokeRect(x0, y0, x1-x0, y1-y0);
+                // Filter out low confidence matches
+                const highConfidenceNumbers = groupedNumbers.filter((_, index) => 
+                    result.data.confidence > 60 // Only keep numbers with >60% confidence
+                );
+
+                if (highConfidenceNumbers.length > 0) {
+                    console.log('Numbers found:', highConfidenceNumbers);
+                    await saveNumbers(highConfidenceNumbers);
+                    resultDiv.textContent = `Detected sail numbers: ${highConfidenceNumbers.join(', ')}`;
+                    
+                    // Draw rectangles around detected numbers
+                    const words = result.data.words;
+                    context.strokeStyle = 'red';
+                    context.lineWidth = 2;
+                    for (const word of words) {
+                        if (/^\d{2,6}$/.test(word.text)) { // Only highlight valid sail numbers
+                            const { x0, y0, x1, y1 } = word.bbox;
+                            context.strokeRect(x0, y0, x1-x0, y1-y0);
+                        }
                     }
+                } else {
+                    resultDiv.textContent = 'Numbers detected but confidence too low';
                 }
             } else {
                 console.log('No valid sail numbers detected in frame');
@@ -145,8 +171,8 @@ async function init() {
             resultDiv.textContent = 'Error processing image: ' + err.message;
         }
 
-        // Continue scanning every 5 seconds instead of 3
-        setTimeout(scanFrame, 5000);
+        // Increase scan interval to 8 seconds to allow for better processing
+        setTimeout(scanFrame, 8000);
     }
 }
 
