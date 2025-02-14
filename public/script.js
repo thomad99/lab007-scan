@@ -76,13 +76,13 @@ async function init() {
     async function scanFrame() {
         if (!isScanning) return;
 
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
         try {
-            resultDiv.textContent = 'Scanning image with Azure Vision...';
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            resultDiv.textContent = 'Processing image...';
             debugDiv.textContent = 'Starting scan...';
             
             // Convert canvas to blob
@@ -101,84 +101,81 @@ async function init() {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to process image');
+                throw new Error('Failed to process image');
             }
 
             const result = await response.json();
             debugDiv.textContent += '\nReceived response from Azure';
-            
-            // Always show what Azure found, even if no valid sail numbers
-            if (debugCheckbox.checked) {
-                let debugText = `
-=== A) WHAT'S IN THE IMAGE ===
-Total text items found: ${result.imageContents.totalItems}
-Description: ${result.imageContents.description}
 
-All text found:
-${result.imageContents.allTextFound.map(item => 
-    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
-).join('\n')}
+            // Process sail numbers if found
+            if (result.sailNumbers && result.sailNumbers.length > 0) {
+                const validNumbers = result.sailNumbers
+                    .filter(num => num.confidence > 0.6)
+                    .map(num => num.number);
 
-=== B) SAIL NUMBER ANALYSIS ===
-Sail numbers found: ${result.sailNumbers.found ? 'YES' : 'NO'}
-${result.sailNumbers.numbers.map(num => 
-    `• Number ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
-    - Found in: "${num.originalText}"
-    - Location: ${num.location}`
-).join('\n') || 'No valid sail numbers detected'}
+                if (validNumbers.length > 0) {
+                    console.log('Found valid sail numbers:', validNumbers);
+                    await saveNumbers(validNumbers);
+                    resultDiv.textContent = `Found sail numbers: ${validNumbers.join(', ')}`;
 
-=== PROCESSING INFO ===
-Processing time: ${result.debug.processingTime}
-Status: ${result.debug.status}
-                `.trim();
-
-                debugDiv.textContent = debugText;
-            }
-
-            // Update the main result display
-            if (result.numbers && result.numbers.length > 0) {
-                console.log('Azure Vision found numbers:', result.numbers);
-                await saveNumbers(result.numbers);
-                resultDiv.textContent = `Azure detected sail numbers: ${result.numbers.join(', ')}`;
-                
-                // Draw detection boxes if coordinates are returned
-                if (result.boxes) {
+                    // Draw boxes around detected numbers
                     context.strokeStyle = 'red';
                     context.lineWidth = 2;
-                    result.boxes.forEach(box => {
-                        context.strokeRect(
-                            box.x,
-                            box.y,
-                            box.width,
-                            box.height
-                        );
+                    result.sailNumbers.forEach(num => {
+                        const box = num.boundingBox;
+                        if (box) {
+                            context.beginPath();
+                            context.moveTo(box[0], box[1]);
+                            for (let i = 2; i < box.length; i += 2) {
+                                context.lineTo(box[i], box[i + 1]);
+                            }
+                            context.closePath();
+                            context.stroke();
+                        }
                     });
                 }
             } else {
-                resultDiv.textContent = 'Azure Vision: No valid sail numbers detected';
+                resultDiv.textContent = 'No valid sail numbers detected';
+            }
+
+            // Show debug information if enabled
+            if (debugCheckbox.checked) {
+                debugDiv.innerHTML = `
+=== Scan Results ===
+Time: ${new Date().toLocaleString()}
+
+Sail Numbers Found:
+${result.sailNumbers?.length > 0 
+    ? result.sailNumbers.map(num => 
+        `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+         From text: "${num.originalText}"`
+    ).join('\n')
+    : 'None detected'}
+
+All Text Found:
+${result.rawText?.map(item => 
+    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
+).join('\n') || 'No text found'}
+
+Processing Time: ${result.processingTime}
+Status: ${result.status}
+                `.trim();
             }
 
         } catch (err) {
-            console.error('Azure Vision error:', err);
-            resultDiv.textContent = 'Azure Vision error: ' + err.message;
+            console.error('Scan error:', err);
+            resultDiv.textContent = 'Scan error: ' + err.message;
             if (debugCheckbox.checked) {
                 debugDiv.textContent += '\nError: ' + err.message;
             }
         }
 
-        // Show a countdown for next scan
-        let countdown = 15;
-        const updateCountdown = setInterval(() => {
-            if (countdown > 0 && isScanning) {
-                resultDiv.textContent += ` (Next scan in ${countdown}s)`;
-                countdown--;
-            } else {
-                clearInterval(updateCountdown);
-            }
-        }, 1000);
-
-        setTimeout(scanFrame, 15000);
+        // Wait 15 seconds before next scan
+        if (isScanning) {
+            resultDiv.textContent += '\nWaiting 15 seconds before next scan...';
+            await new Promise(resolve => setTimeout(resolve, 15000));
+            scanFrame();
+        }
     }
 
     document.getElementById('trainBtn').addEventListener('click', () => {
@@ -263,8 +260,11 @@ async function saveNumbers(numbers) {
         if (!response.ok) {
             throw new Error('Failed to save numbers');
         }
+
+        console.log('Successfully saved numbers:', numbers);
     } catch (err) {
         console.error('Error saving numbers:', err);
+        debugDiv.textContent += '\nFailed to save numbers to database';
     }
 }
 
