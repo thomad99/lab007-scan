@@ -53,6 +53,39 @@
         .confidence-low {
             color: #cc0000;
         }
+        .sail-number-display {
+            background: #fff;
+            border: 3px solid #0066cc;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .sail-number-display h2 {
+            margin: 0 0 10px 0;
+            color: #0066cc;
+        }
+        
+        .sail-number-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        
+        .sail-number-confidence {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .confidence-indicator {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -64,6 +97,11 @@
     <img id="preview" style="display: none;">
     <div id="loading" class="loading">Analyzing image...</div>
     <div id="results"></div>
+    <div id="sailNumberBox" class="sail-number-display" style="display: none;">
+        <h2>Detected Sail Number</h2>
+        <div class="sail-number-value">--</div>
+        <div class="sail-number-confidence"></div>
+    </div>
 
     <script>
         const imageInput = document.getElementById('imageInput');
@@ -112,7 +150,7 @@ Time: ${new Date().toLocaleString()}
 ${data.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
 
 === DETECTED SAIL NUMBERS ===
-${extractSailNumbers(data)}
+${extractSailNumbers(data).message}
 
 === RAW AZURE ANALYSIS ===
 Raw Text Found:
@@ -128,6 +166,27 @@ Processing Info:
 === Complete Azure Response ===
 ${JSON.stringify(data.rawResponse, null, 2)}
                 `.trim();
+
+                if (data.status === 'Succeeded') {
+                    const sailNumberBox = document.getElementById('sailNumberBox');
+                    const potentialNumbers = extractSailNumbers(data);
+                    
+                    if (potentialNumbers.bestMatch) {
+                        sailNumberBox.style.display = 'block';
+                        const confidenceClass = getConfidenceClass(potentialNumbers.bestMatch.confidence);
+                        const confidencePercent = (potentialNumbers.bestMatch.confidence * 100).toFixed(1);
+                        
+                        sailNumberBox.innerHTML = `
+                            <h2>Detected Sail Number</h2>
+                            <div class="sail-number-value">${potentialNumbers.bestMatch.number}</div>
+                            <div class="sail-number-confidence">
+                                Confidence: <span class="${confidenceClass}">${confidencePercent}%</span>
+                            </div>
+                        `;
+                    } else {
+                        sailNumberBox.style.display = 'none';
+                    }
+                }
 
             } catch (err) {
                 results.innerHTML = `
@@ -164,6 +223,12 @@ If you see a rate limit error, please wait about a minute before trying again.
             return `[${box.join(', ')}]`;
         }
 
+        function getConfidenceClass(confidence) {
+            if (confidence >= 0.9) return 'confidence-high';
+            if (confidence >= 0.7) return 'confidence-medium';
+            return 'confidence-low';
+        }
+
         function extractSailNumbers(data) {
             const potentialNumbers = [];
             
@@ -185,21 +250,26 @@ If you see a rate limit error, please wait about a minute before trying again.
                 }
             });
 
-            // Sort by confidence
-            potentialNumbers.sort((a, b) => b.confidence - a.confidence);
-
             if (potentialNumbers.length === 0) {
-                return 'No potential sail numbers found';
+                return {
+                    bestMatch: null,
+                    message: 'No potential sail numbers found'
+                };
             }
 
-            // Format the results
-            return `
-🎯 Most Likely Sail Number: ${potentialNumbers[0].number}
-   Confidence: ${(potentialNumbers[0].confidence * 100).toFixed(1)}%
-   Original Text: "${potentialNumbers[0].originalText}"
+            // Sort and get best match
+            potentialNumbers.sort((a, b) => b.confidence - a.confidence);
+            return {
+                bestMatch: potentialNumbers[0],
+                allNumbers: potentialNumbers,
+                message: formatNumbersMessage(potentialNumbers)
+            };
+        }
 
+        function formatNumbersMessage(numbers) {
+            return `
 All Potential Numbers:
-${potentialNumbers.map(num => 
+${numbers.map(num => 
     `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
      From text: "${num.originalText}"`
 ).join('\n')}
