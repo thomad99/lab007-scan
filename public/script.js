@@ -99,12 +99,12 @@ async function init() {
                 canvas.toBlob(resolve, 'image/jpeg', 0.95);
             });
 
-            // Send to backend for Azure processing
+            // Send to backend for Azure processing - using /api/analyze instead of /api/scan
             const formData = new FormData();
             formData.append('image', blob);
 
             debugDiv.textContent += '\nSending image to Azure...';
-            const response = await fetch('/api/scan', {
+            const response = await fetch('/api/analyze', {  // Changed endpoint
                 method: 'POST',
                 body: formData
             });
@@ -115,7 +115,37 @@ async function init() {
 
             resultDiv.textContent = 'Waiting for Azure analysis...';
             const result = await response.json();
-            debugDiv.textContent += '\nReceived response from Azure';
+
+            // Show debug information if enabled
+            if (debugCheckbox.checked) {
+                debugDiv.innerHTML = `
+=== Azure Vision Analysis ===
+Time: ${new Date().toLocaleString()}
+${result.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
+
+=== SAIL NUMBERS FOUND ===
+${result.sailNumbers?.length > 0 ? 
+    result.sailNumbers.map(num => 
+        `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+         Original text: "${num.originalText}"
+         Location: ${formatBoundingBox(num.boundingBox)}`
+    ).join('\n')
+    : 'No sail numbers detected'}
+
+=== ALL TEXT FOUND ===
+${result.rawText?.map(item => 
+    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)
+     Location: ${formatBoundingBox(item.boundingBox)}`
+).join('\n')}
+
+Processing Info:
+- Processing Time: ${result.processingTime}
+- Status: ${result.status}
+
+=== Complete Azure Response ===
+${JSON.stringify(result.rawResponse, null, 2)}
+                `.trim();
+            }
 
             // Process sail numbers if found
             if (result.sailNumbers && result.sailNumbers.length > 0) {
@@ -148,30 +178,6 @@ async function init() {
                 }
             } else {
                 resultDiv.textContent = 'No sail numbers found in image';
-            }
-
-            // Show debug information if enabled
-            if (debugCheckbox.checked) {
-                debugDiv.innerHTML = `
-=== Scan Results ===
-Time: ${new Date().toLocaleString()}
-
-Sail Numbers Found:
-${result.sailNumbers?.length > 0 
-    ? result.sailNumbers.map(num => 
-        `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
-         From text: "${num.originalText}"`
-    ).join('\n')
-    : 'None detected'}
-
-All Text Found:
-${result.rawText?.map(item => 
-    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
-).join('\n') || 'No text found'}
-
-Processing Time: ${result.processingTime}
-Status: ${result.status}
-                `.trim();
             }
 
         } catch (err) {
@@ -278,6 +284,12 @@ async function saveNumbers(numbers) {
         console.error('Error saving numbers:', err);
         debugDiv.textContent += '\nFailed to save numbers to database';
     }
+}
+
+// Add helper function for bounding box formatting
+function formatBoundingBox(box) {
+    if (!box) return 'No location data';
+    return `[${box.join(', ')}]`;
 }
 
 // Start the application when the page loads
