@@ -50,13 +50,22 @@ async function init() {
             console.log('Camera access granted');
             
             video.srcObject = videoStream;
-            video.onloadedmetadata = () => {
-                console.log('Video metadata loaded');
-                video.play();
-            };
+            
+            // Wait for video to be ready
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    console.log('Video metadata loaded');
+                    video.play();
+                    resolve();
+                };
+            });
+
+            // Wait additional 3 seconds for camera to stabilize
+            resultDiv.textContent = 'Camera started. Waiting 3 seconds to stabilize...';
+            await new Promise(resolve => setTimeout(resolve, 3000));
             
             isScanning = true;
-            resultDiv.textContent = 'Camera started. Beginning scan...';
+            resultDiv.textContent = 'Starting first scan...';
             scanFrame();
         } catch (err) {
             console.error('Error accessing camera:', err);
@@ -82,7 +91,7 @@ async function init() {
             canvas.height = video.videoHeight;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            resultDiv.textContent = 'Processing image...';
+            resultDiv.textContent = 'Capturing image and sending to Azure...';
             debugDiv.textContent = 'Starting scan...';
             
             // Convert canvas to blob
@@ -104,6 +113,7 @@ async function init() {
                 throw new Error('Failed to process image');
             }
 
+            resultDiv.textContent = 'Waiting for Azure analysis...';
             const result = await response.json();
             debugDiv.textContent += '\nReceived response from Azure';
 
@@ -133,9 +143,11 @@ async function init() {
                             context.stroke();
                         }
                     });
+                } else {
+                    resultDiv.textContent = 'No valid sail numbers detected';
                 }
             } else {
-                resultDiv.textContent = 'No valid sail numbers detected';
+                resultDiv.textContent = 'No sail numbers found in image';
             }
 
             // Show debug information if enabled
