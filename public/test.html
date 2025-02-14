@@ -33,6 +33,26 @@
             color: #666;
             margin: 10px 0;
         }
+        .sail-number {
+            background: #e6f3ff;
+            padding: 10px;
+            border-left: 4px solid #0066cc;
+            margin: 10px 0;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .confidence-high {
+            color: #2d8a2d;
+        }
+        .confidence-medium {
+            color: #b37400;
+        }
+        .confidence-low {
+            color: #cc0000;
+        }
     </style>
 </head>
 <body>
@@ -91,6 +111,10 @@
 Time: ${new Date().toLocaleString()}
 ${data.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
 
+=== DETECTED SAIL NUMBERS ===
+${extractSailNumbers(data)}
+
+=== RAW AZURE ANALYSIS ===
 Raw Text Found:
 ${formatTextResults(data.rawText)}
 
@@ -100,7 +124,6 @@ ${formatDetectedItems(data.detectedItems)}
 Processing Info:
 - Processing Time: ${data.processingTime}
 - Status: ${data.status}
-${data.status !== 'Succeeded' ? '- Note: Rate limited, results may be incomplete' : ''}
 
 === Complete Azure Response ===
 ${JSON.stringify(data.rawResponse, null, 2)}
@@ -139,6 +162,48 @@ If you see a rate limit error, please wait about a minute before trying again.
         function formatBoundingBox(box) {
             if (!box) return 'No location data';
             return `[${box.join(', ')}]`;
+        }
+
+        function extractSailNumbers(data) {
+            const potentialNumbers = [];
+            
+            // Process each text item
+            data.rawText.forEach(item => {
+                // Clean the text (convert O to 0, etc)
+                const cleaned = item.text.replace(/[OoIl]/g, '0').replace(/[^0-9]/g, '');
+                
+                // Check if it could be a sail number
+                if (cleaned.length >= 1 && cleaned.length <= 6) {
+                    const num = parseInt(cleaned);
+                    if (num >= 1 && num <= 999999) {
+                        potentialNumbers.push({
+                            number: num,
+                            confidence: item.confidence,
+                            originalText: item.text
+                        });
+                    }
+                }
+            });
+
+            // Sort by confidence
+            potentialNumbers.sort((a, b) => b.confidence - a.confidence);
+
+            if (potentialNumbers.length === 0) {
+                return 'No potential sail numbers found';
+            }
+
+            // Format the results
+            return `
+🎯 Most Likely Sail Number: ${potentialNumbers[0].number}
+   Confidence: ${(potentialNumbers[0].confidence * 100).toFixed(1)}%
+   Original Text: "${potentialNumbers[0].originalText}"
+
+All Potential Numbers:
+${potentialNumbers.map(num => 
+    `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+     From text: "${num.originalText}"`
+).join('\n')}
+            `.trim();
         }
     </script>
 </body>
