@@ -149,35 +149,22 @@ ${JSON.stringify(result.rawResponse, null, 2)}
 
             // Process sail numbers if found
             if (result.sailNumbers && result.sailNumbers.length > 0) {
-                const validNumbers = result.sailNumbers
-                    .filter(num => num.confidence > 0.6)
-                    .map(num => num.number);
-
-                if (validNumbers.length > 0) {
-                    console.log('Found valid sail numbers:', validNumbers);
-                    await saveNumbers(validNumbers);
-                    resultDiv.textContent = `Found sail numbers: ${validNumbers.join(', ')}`;
-
-                    // Draw boxes around detected numbers
-                    context.strokeStyle = 'red';
-                    context.lineWidth = 2;
-                    result.sailNumbers.forEach(num => {
-                        const box = num.boundingBox;
-                        if (box) {
-                            context.beginPath();
-                            context.moveTo(box[0], box[1]);
-                            for (let i = 2; i < box.length; i += 2) {
-                                context.lineTo(box[i], box[i + 1]);
-                            }
-                            context.closePath();
-                            context.stroke();
-                        }
-                    });
-                } else {
-                    resultDiv.textContent = 'No valid sail numbers detected';
-                }
+                const bestMatch = result.sailNumbers[0];
+                const sailNumberBox = document.getElementById('sailNumberBox');
+                sailNumberBox.style.display = 'block';
+                
+                const confidenceClass = getConfidenceClass(bestMatch.confidence);
+                const confidencePercent = (bestMatch.confidence * 100).toFixed(1);
+                
+                sailNumberBox.innerHTML = `
+                    <h2>Detected Sail Number</h2>
+                    <div class="sail-number-value">${bestMatch.number}</div>
+                    <div class="sail-number-confidence">
+                        Confidence: <span class="${confidenceClass}">${confidencePercent}%</span>
+                    </div>
+                `;
             } else {
-                resultDiv.textContent = 'No sail numbers found in image';
+                document.getElementById('sailNumberBox').style.display = 'none';
             }
 
         } catch (err) {
@@ -290,6 +277,13 @@ async function saveNumbers(numbers) {
 function formatBoundingBox(box) {
     if (!box) return 'No location data';
     return `[${box.join(', ')}]`;
+}
+
+// Add this function to format confidence levels
+function getConfidenceClass(confidence) {
+    if (confidence >= 0.9) return 'confidence-high';
+    if (confidence >= 0.7) return 'confidence-medium';
+    return 'confidence-low';
 }
 
 // Start the application when the page loads
