@@ -11,10 +11,35 @@
             padding: 20px;
         }
         .upload-section {
-            border: 2px dashed #ccc;
+            background: #fff;
+            border: 3px solid #0066cc;
+            border-radius: 10px;
             padding: 20px;
-            text-align: center;
             margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .upload-section h2 {
+            margin: 0 0 10px 0;
+            color: #0066cc;
+        }
+        .upload-section p {
+            color: #666;
+            margin: 10px 0;
+        }
+        .upload-section input[type="file"] {
+            display: block;
+            margin: 10px auto;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f8f8f8;
+            width: 80%;
+            max-width: 400px;
+        }
+        .upload-section input[type="file"]:hover {
+            background: #f0f0f0;
+            border-color: #0066cc;
         }
         #preview {
             max-width: 100%;
@@ -117,17 +142,19 @@
 <body>
     <h1>LAB007-Sail-Photo-Scan</h1>
     <div class="upload-section">
+        <h2>Upload Sail Photo</h2>
         <input type="file" id="imageInput" accept="image/*">
         <p>Select an image to analyze</p>
     </div>
-    <img id="preview" style="display: none;">
-    <div id="loading" class="loading">Analyzing image...</div>
 
-    <!-- Add the new top results box -->
+    <!-- Move top results box here, before the preview image -->
     <div id="topResultsBox" class="sail-number-display" style="display: block;">
         <h2>Top Results</h2>
         <div class="top-results-content">Awaiting scan...</div>
     </div>
+
+    <img id="preview" style="display: none;">
+    <div id="loading" class="loading">Analyzing image...</div>
 
     <div id="results"></div>
     <div id="sailNumberBox" class="sail-number-display" style="display: none;">
