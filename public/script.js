@@ -116,6 +116,9 @@ async function init() {
             resultDiv.textContent = 'Waiting for Azure analysis...';
             const result = await response.json();
 
+            // Add this line to update the top results
+            updateTopResults(result.rawText);
+
             // Show debug information if enabled
             if (debugCheckbox.checked) {
                 debugDiv.innerHTML = `
@@ -173,6 +176,10 @@ ${JSON.stringify(result.rawResponse, null, 2)}
             if (debugCheckbox.checked) {
                 debugDiv.textContent += '\nError: ' + err.message;
             }
+
+            // Add this to show error in top results box
+            const topResultsContent = document.getElementById('topResultsBox').querySelector('.top-results-content');
+            topResultsContent.textContent = 'Error during scan';
         }
 
         // Wait 15 seconds before next scan
@@ -284,6 +291,49 @@ function getConfidenceClass(confidence) {
     if (confidence >= 0.9) return 'confidence-high';
     if (confidence >= 0.7) return 'confidence-medium';
     return 'confidence-low';
+}
+
+// Add this function near your other helper functions
+function updateTopResults(rawText) {
+    const topResultsBox = document.getElementById('topResultsBox');
+    const topResultsContent = topResultsBox.querySelector('.top-results-content');
+    
+    if (rawText && rawText.length > 0) {
+        // Filter and process text items that could be sail numbers
+        const potentialNumbers = rawText
+            .map(item => {
+                const cleaned = item.text.replace(/[OoIl]/g, '0').replace(/[^0-9]/g, '');
+                return {
+                    number: cleaned,
+                    confidence: item.confidence,
+                    originalText: item.text
+                };
+            })
+            .filter(item => {
+                const num = parseInt(item.number);
+                return item.number.length >= 1 && 
+                       item.number.length <= 6 && 
+                       num >= 1 && 
+                       num <= 999999;
+            })
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, 3); // Take top 3 results
+
+        if (potentialNumbers.length > 0) {
+            topResultsContent.innerHTML = potentialNumbers.map(result => `
+                <div class="top-result-item">
+                    <span class="top-result-number">${result.number}</span>
+                    <span class="top-result-confidence ${getConfidenceClass(result.confidence)}">
+                        ${(result.confidence * 100).toFixed(1)}%
+                    </span>
+                </div>
+            `).join('');
+        } else {
+            topResultsContent.textContent = 'No numbers detected';
+        }
+    } else {
+        topResultsContent.textContent = 'No text found';
+    }
 }
 
 // Start the application when the page loads
