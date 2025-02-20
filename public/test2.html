@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Azure Vision Test</title>
+    <title>LAB007-Sail-Photo-Scan</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
@@ -115,7 +115,7 @@
     </style>
 </head>
 <body>
-    <h1>Azure Vision Test</h1>
+    <h1>LAB007-Sail-Photo-Scan</h1>
     <div class="upload-section">
         <input type="file" id="imageInput" accept="image/*">
         <p>Select an image to analyze</p>
@@ -330,6 +330,19 @@ ${numbers.map(num =>
      From text: "${num.originalText}"`
 ).join('\n')}
             `.trim();
+        }
+
+        function formatGoogleResults(results) {
+            if (!results || !results.textAnnotations) return 'No Google Vision results available';
+            
+            return `Text Annotations:
+${results.textAnnotations.map(item => {
+    // Only show confidence if it exists and is a number
+    const confidenceStr = (item.confidence !== undefined && !isNaN(item.confidence)) 
+        ? ` (${(item.confidence * 100).toFixed(1)}% confident)`
+        : '';
+    return `• "${item.description}"${confidenceStr}`;
+}).join('\n')}`;
         }
     </script>
 </body>
