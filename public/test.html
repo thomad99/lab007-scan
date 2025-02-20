@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>LAB007-SailScanner</title>
+    <title>Azure Vision Test</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
@@ -102,11 +102,6 @@
         <div class="sail-number-value">--</div>
         <div class="sail-number-confidence"></div>
     </div>
-    <div id="googleSailNumberBox" class="sail-number-display" style="display: none;">
-        <h2>Google Vision Best Guess</h2>
-        <div class="sail-number-value">--</div>
-        <div class="sail-number-confidence"></div>
-    </div>
 
     <script>
         const imageInput = document.getElementById('imageInput');
@@ -155,17 +150,14 @@ Time: ${new Date().toLocaleString()}
 ${data.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
 
 === DETECTED SAIL NUMBERS ===
-${extractSailNumbers(data.azureResults).message}
-
-=== GOOGLE VISION RESULTS ===
-${formatGoogleResults(data.googleResults)}
+${extractSailNumbers(data).message}
 
 === RAW AZURE ANALYSIS ===
 Raw Text Found:
-${formatTextResults(data.azureResults.rawText)}
+${formatTextResults(data.rawText)}
 
 Detected Items:
-${formatDetectedItems(data.azureResults.detectedItems)}
+${formatDetectedItems(data.detectedItems)}
 
 Processing Info:
 - Processing Time: ${data.processingTime}
@@ -176,26 +168,23 @@ ${JSON.stringify(data.rawResponse, null, 2)}
                 `.trim();
 
                 if (data.status === 'Succeeded') {
-                    // Update Azure Vision results
                     const sailNumberBox = document.getElementById('sailNumberBox');
-                    const azurePotentialNumbers = extractSailNumbers(data.azureResults);
+                    const potentialNumbers = extractSailNumbers(data);
                     
-                    if (azurePotentialNumbers.bestMatch) {
+                    if (potentialNumbers.bestMatch) {
                         sailNumberBox.style.display = 'block';
-                        updateSailNumberDisplay(sailNumberBox, azurePotentialNumbers.bestMatch, 'Azure Vision');
+                        const confidenceClass = getConfidenceClass(potentialNumbers.bestMatch.confidence);
+                        const confidencePercent = (potentialNumbers.bestMatch.confidence * 100).toFixed(1);
+                        
+                        sailNumberBox.innerHTML = `
+                            <h2>Detected Sail Number</h2>
+                            <div class="sail-number-value">${potentialNumbers.bestMatch.number}</div>
+                            <div class="sail-number-confidence">
+                                Confidence: <span class="${confidenceClass}">${confidencePercent}%</span>
+                            </div>
+                        `;
                     } else {
                         sailNumberBox.style.display = 'none';
-                    }
-
-                    // Update Google Vision results
-                    const googleSailNumberBox = document.getElementById('googleSailNumberBox');
-                    const googlePotentialNumbers = extractSailNumbers(data.googleResults);
-                    
-                    if (googlePotentialNumbers.bestMatch) {
-                        googleSailNumberBox.style.display = 'block';
-                        updateSailNumberDisplay(googleSailNumberBox, googlePotentialNumbers.bestMatch, 'Google Vision');
-                    } else {
-                        googleSailNumberBox.style.display = 'none';
                     }
                 }
 
@@ -285,28 +274,6 @@ ${numbers.map(num =>
      From text: "${num.originalText}"`
 ).join('\n')}
             `.trim();
-        }
-
-        function updateSailNumberDisplay(element, match, source) {
-            const confidenceClass = getConfidenceClass(match.confidence);
-            const confidencePercent = (match.confidence * 100).toFixed(1);
-            
-            element.innerHTML = `
-                <h2>${source} Best Guess</h2>
-                <div class="sail-number-value">${match.number}</div>
-                <div class="sail-number-confidence">
-                    Confidence: <span class="${confidenceClass}">${confidencePercent}%</span>
-                </div>
-            `;
-        }
-
-        function formatGoogleResults(results) {
-            if (!results || !results.textAnnotations) return 'No Google Vision results available';
-            
-            return `Text Annotations:
-${results.textAnnotations.map(item => 
-    `• "${item.description}" (${(item.confidence || 0) * 100}% confident)`
-).join('\n')}`;
         }
     </script>
 </body>
