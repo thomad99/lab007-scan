@@ -386,32 +386,40 @@ app.get('/results', (req, res) => {
 // Add this helper function to look up skipper info
 async function lookupSkipperInfo(sailNumber) {
     try {
-        // First check race_results table
-        const raceQuery = await pool.query(`
-            SELECT DISTINCT sail_number, boat_name, yacht_club 
-            FROM race_results 
-            WHERE sail_number = $1 
-            ORDER BY id DESC LIMIT 1`, 
-            [sailNumber]
-        );
-
-        if (raceQuery.rows.length > 0) {
-            return raceQuery.rows[0];
-        }
-
-        // If not found, check imported_data
+        // First check imported_data (since it has Skipper information)
         const importedQuery = await pool.query(`
-            SELECT DISTINCT "Sail_Number" as sail_number, 
-                   "Boat_Name" as boat_name, 
-                   "Skipper" as skipper_name,
-                   "Yacht_Club" as yacht_club
+            SELECT DISTINCT 
+                "Sail_Number" as sail_number, 
+                "Boat_Name" as boat_name, 
+                "Skipper" as skipper_name,
+                "Yacht_Club" as yacht_club,
+                "Regatta_Date"
             FROM imported_data 
             WHERE "Sail_Number" = $1 
-            ORDER BY "Regatta_Date" DESC LIMIT 1`,
+            ORDER BY "Regatta_Date" DESC 
+            LIMIT 1`,
             [sailNumber]
         );
 
-        return importedQuery.rows[0] || null;
+        if (importedQuery.rows.length > 0) {
+            return importedQuery.rows[0];
+        }
+
+        // If not found, check race_results
+        const raceQuery = await pool.query(`
+            SELECT DISTINCT 
+                sail_number, 
+                boat_name, 
+                yacht_club,
+                id
+            FROM race_results 
+            WHERE sail_number = $1 
+            ORDER BY id DESC 
+            LIMIT 1`, 
+            [sailNumber]
+        );
+
+        return raceQuery.rows[0] || null;
     } catch (err) {
         console.error('Error looking up skipper:', err);
         return null;
