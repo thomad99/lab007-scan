@@ -654,6 +654,21 @@ app.get('/api/schema/details', async (req, res) => {
     }
 });
 
+// Add endpoint to get scan history
+app.get('/api/scans', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT * FROM scan_results 
+            ORDER BY scan_time DESC 
+            LIMIT 100
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching scan history:', err);
+        res.status(500).json({ error: 'Failed to fetch scan history' });
+    }
+});
+
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
     console.log(`Database URL: ${process.env.DATABASE_URL.split('@')[1]}`); // Only log the host part for security
