@@ -1,167 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sail Number Results</title>
+    <title>LAB007-Scan-Results</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
-            margin: 0;
-            padding: 20px;
             font-family: Arial, sans-serif;
-            background: linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.9)),
-                        url('https://images.unsplash.com/photo-1500930287596-c1ecaa373bb2?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');
-            background-size: cover;
-            background-attachment: fixed;
-            min-height: 100vh;
-        }
-
-        .container {
-            max-width: 800px;
+            max-width: 1200px;
             margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 0 20px 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
         }
-
-        h1 {
-            text-align: center;
-            color: #1a5f7a;
-            font-size: 2.5em;
-            margin-bottom: 30px;
-        }
-
-        .results-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            background: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        .results-table th,
-        .results-table td {
+        .scan-result {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
             padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-            font-size: 1.2em;
+            margin: 10px 0;
         }
-
-        .results-table th {
-            background-color: #1a5f7a;
-            color: white;
+        .scan-time {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .sail-number {
+            font-size: 1.2em;
             font-weight: bold;
         }
-
-        .results-table tr:nth-child(even) {
-            background-color: #f8f8f8;
+        .skipper-name {
+            color: #0066cc;
         }
-
-        .results-table tr:hover {
-            background-color: #f0f0f0;
-        }
-
-        .refresh-btn {
-            display: block;
-            margin: 20px auto;
-            padding: 10px 20px;
-            font-size: 1.2em;
-            background-color: #1a5f7a;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .refresh-btn:hover {
-            background-color: #134b60;
-        }
-
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
-
-            .container {
-                padding: 10px;
-            }
-
-            .results-table th,
-            .results-table td {
-                padding: 10px;
-                font-size: 1.1em;
-            }
-
-            h1 {
-                font-size: 2em;
-            }
-        }
-
-        .header-image {
-            width: 100%;
-            max-width: 800px;
-            height: auto;
-            margin: 0 auto 20px;
-            display: block;
-            border-radius: 10px 10px 0 0;
+        .confidence {
+            float: right;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <img src="/LOGO%20BLUE.JPEG" alt="Sail Numbers Logo" class="header-image">
-        <h1>Sail Number Results</h1>
-        <button class="refresh-btn" onclick="loadResults()">Refresh Results</button>
-        <table class="results-table">
-            <thead>
-                <tr>
-                    <th>Sail Number</th>
-                    <th>Time Seen</th>
-                </tr>
-            </thead>
-            <tbody id="resultsBody">
-                <!-- Results will be inserted here -->
-            </tbody>
-        </table>
-    </div>
+    <h1>LAB007-Scan-Results</h1>
+    <div id="scanResults"></div>
 
     <script>
-        function formatDateTime(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleString();
-        }
-
-        async function loadResults() {
+        async function loadScanResults() {
             try {
-                const response = await fetch('/api/numbers');
-                if (!response.ok) {
-                    throw new Error('Failed to fetch results');
-                }
-                const data = await response.json();
+                const response = await fetch('/api/scans');
+                const scans = await response.json();
                 
-                const tbody = document.getElementById('resultsBody');
-                tbody.innerHTML = ''; // Clear existing results
-                
-                data.forEach(record => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${record.number}</td>
-                        <td>${formatDateTime(record.timestamp)}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            } catch (error) {
-                console.error('Error loading results:', error);
-                alert('Error loading results. Please try again.');
+                const resultsDiv = document.getElementById('scanResults');
+                resultsDiv.innerHTML = scans.map(scan => `
+                    <div class="scan-result">
+                        <div class="scan-time">${new Date(scan.scan_time).toLocaleString()}</div>
+                        <div class="sail-number">Sail #${scan.sail_number}</div>
+                        <div class="skipper-name">${scan.skipper_name || 'Unknown Skipper'}</div>
+                        <div class="confidence ${getConfidenceClass(scan.confidence)}">
+                            ${(scan.confidence * 100).toFixed(1)}% confident
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Error loading scan results:', err);
             }
         }
 
-        // Load results when page loads
-        document.addEventListener('DOMContentLoaded', loadResults);
-
-        // Auto-refresh every 30 seconds
-        setInterval(loadResults, 30000);
+        // Load results every 30 seconds
+        loadScanResults();
+        setInterval(loadScanResults, 30000);
     </script>
 </body>
 </html> 
