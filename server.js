@@ -386,6 +386,8 @@ app.get('/results', (req, res) => {
 // Add this helper function to look up skipper info
 async function lookupSkipperInfo(sailNumber) {
     try {
+        console.log('Looking up skipper info for sail number:', sailNumber);
+        
         // First check imported_data (since it has Skipper information)
         const importedQuery = await pool.query(`
             SELECT DISTINCT 
@@ -400,6 +402,8 @@ async function lookupSkipperInfo(sailNumber) {
             LIMIT 1`,
             [sailNumber]
         );
+
+        console.log('Imported data query result:', importedQuery.rows);
 
         if (importedQuery.rows.length > 0) {
             return importedQuery.rows[0];
@@ -419,6 +423,7 @@ async function lookupSkipperInfo(sailNumber) {
             [sailNumber]
         );
 
+        console.log('Race results query result:', raceQuery.rows);
         return raceQuery.rows[0] || null;
     } catch (err) {
         console.error('Error looking up skipper:', err);
