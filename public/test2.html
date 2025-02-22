@@ -220,6 +220,7 @@
                 }
 
                 const data = await response.json();
+                console.log('Server response:', data);
                 
                 // Update top results box
                 const topResultsBox = document.getElementById('topResultsBox');
@@ -243,20 +244,25 @@
                     .slice(0, 3); // Take top 3 results
 
                 if (potentialNumbers.length > 0) {
-                    topResultsBox.querySelector('.top-results-content').innerHTML = potentialNumbers.map(result => `
-                        <div class="top-result-item">
-                            <div class="result-info">
-                                <span class="top-result-number">${result.number}</span>
-                                ${data.skipperInfo && result.number === data.bestMatch.sailNumber ? 
-                                    `<span class="skipper-info">${data.skipperInfo.skipper_name || data.skipperInfo.boat_name || ''}</span>` : 
-                                    '<span class="no-match">(No Sailor Match)</span>'
-                                }
+                    topResultsBox.querySelector('.top-results-content').innerHTML = potentialNumbers.map(result => {
+                        console.log('Processing result:', result);
+                        console.log('Skipper info:', data.skipperInfo);
+                        console.log('Best match:', data.bestMatch);
+                        return `
+                            <div class="top-result-item">
+                                <div class="result-info">
+                                    <span class="top-result-number">${result.number}</span>
+                                    ${data.skipperInfo && result.number === data.bestMatch.sailNumber ? 
+                                        `<span class="skipper-info">${data.skipperInfo.skipper_name || data.skipperInfo.boat_name || ''}</span>` : 
+                                        '<span class="no-match">(No Sailor Match)</span>'
+                                    }
+                                </div>
+                                <span class="top-result-confidence ${getConfidenceClass(result.confidence)}">
+                                    ${(result.confidence * 100).toFixed(1)}%
+                                </span>
                             </div>
-                            <span class="top-result-confidence ${getConfidenceClass(result.confidence)}">
-                                ${(result.confidence * 100).toFixed(1)}%
-                            </span>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                 } else {
                     topResultsBox.querySelector('.top-results-content').textContent = 'No numbers detected';
                 }
