@@ -137,6 +137,23 @@
             font-size: 16px;
             color: #666;
         }
+
+        .result-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .skipper-info {
+            color: #0066cc;
+            font-size: 18px;
+        }
+
+        .no-match {
+            color: #666;
+            font-size: 16px;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -208,12 +225,18 @@
                 const topResultsBox = document.getElementById('topResultsBox');
                 const potentialNumbers = extractSailNumbers(data);
                 
-                if (potentialNumbers.allNumbers && potentialNumbers.allNumbers.length > 0) {
+                if (potentialNumbers.length > 0) {
                     // Take top 3 results
                     const topResults = potentialNumbers.allNumbers.slice(0, 3);
                     topResultsBox.querySelector('.top-results-content').innerHTML = topResults.map(result => `
                         <div class="top-result-item">
-                            <span class="top-result-number">${result.number}</span>
+                            <div class="result-info">
+                                <span class="top-result-number">${result.number}</span>
+                                ${data.skipperInfo && result.number === data.bestMatch.sailNumber ? 
+                                    `<span class="skipper-info">${data.skipperInfo.skipper_name || data.skipperInfo.boat_name || ''}</span>` : 
+                                    '<span class="no-match">(No Sailor Match)</span>'
+                                }
+                            </div>
                             <span class="top-result-confidence ${getConfidenceClass(result.confidence)}">
                                 ${(result.confidence * 100).toFixed(1)}%
                             </span>
