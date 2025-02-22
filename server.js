@@ -383,7 +383,42 @@ app.get('/results', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'results.html'));
 });
 
-// Update the analyze endpoint to be simpler
+// Add this helper function to look up skipper info
+async function lookupSkipperInfo(sailNumber) {
+    try {
+        // First check race_results table
+        const raceQuery = await pool.query(`
+            SELECT DISTINCT sail_number, boat_name, yacht_club 
+            FROM race_results 
+            WHERE sail_number = $1 
+            ORDER BY id DESC LIMIT 1`, 
+            [sailNumber]
+        );
+
+        if (raceQuery.rows.length > 0) {
+            return raceQuery.rows[0];
+        }
+
+        // If not found, check imported_data
+        const importedQuery = await pool.query(`
+            SELECT DISTINCT "Sail_Number" as sail_number, 
+                   "Boat_Name" as boat_name, 
+                   "Skipper" as skipper_name,
+                   "Yacht_Club" as yacht_club
+            FROM imported_data 
+            WHERE "Sail_Number" = $1 
+            ORDER BY "Regatta_Date" DESC LIMIT 1`,
+            [sailNumber]
+        );
+
+        return importedQuery.rows[0] || null;
+    } catch (err) {
+        console.error('Error looking up skipper:', err);
+        return null;
+    }
+}
+
+// Update the analyze endpoint
 app.post('/api/analyze', upload.single('image'), async (req, res) => {
     try {
         console.log('Starting Azure Vision analysis...');
@@ -452,6 +487,68 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             words: analysis.detectedItems.length
         });
 
+        // After processing results, before sending response
+        if (analysis.rawText.length > 0) {
+            // Extract potential sail numbers
+            const potentialNumbers = analysis.rawText
+                .map(item => {
+                    const cleaned = item.text.replace(/[OoIl]/g, '0').replace(/[^0-9]/g, '');
+                    return {
+                        number: cleaned,
+                        confidence: item.confidence,
+                        originalText: item.text
+                    };
+                })
+                .filter(item => {
+                    const num = parseInt(item.number);
+                    return item.number.length >= 1 && 
+                           item.number.length <= 6 && 
+                           num >= 1 && 
+                           num <= 999999;
+                })
+                .sort((a, b) => b.confidence - a.confidence);
+
+            if (potentialNumbers.length > 0) {
+                const bestMatch = potentialNumbers[0];
+                
+                // Look up skipper info
+                const skipperInfo = await lookupSkipperInfo(bestMatch.number);
+
+                // Store scan result
+                await pool.query(`
+                    INSERT INTO scan_results 
+                    (sail_number, confidence, raw_text, status, skipper_name, boat_name, yacht_club)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [
+                        bestMatch.number,
+                        bestMatch.confidence,
+                        JSON.stringify(analysis.rawText),
+                        operationResult.status,
+                        skipperInfo?.skipper_name || null,
+                        skipperInfo?.boat_name || null,
+                        skipperInfo?.yacht_club || null
+                    ]
+                );
+
+                // Add skipper info to response
+                res.json({
+                    success: true,
+                    rawText: analysis.rawText,
+                    detectedItems: analysis.detectedItems,
+                    skipperInfo: skipperInfo,
+                    bestMatch: {
+                        sailNumber: bestMatch.number,
+                        confidence: bestMatch.confidence
+                    },
+                    processingTime: '3 seconds',
+                    status: operationResult.status,
+                    rawResponse: operationResult.analyzeResult
+                });
+                return;
+            }
+        }
+
+        // If no numbers found, send original response
         res.json({
             success: true,
             rawText: analysis.rawText,
@@ -473,6 +570,88 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
 // Add route to serve test page
 app.get('/test', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
+// Add this endpoint to view database schema
+app.get('/api/schema', async (req, res) => {
+    try {
+        // Get all tables
+        const tables = await pool.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        `);
+
+        // Get schema for each table
+        const schema = {};
+        for (const table of tables.rows) {
+            const tableName = table.table_name;
+            const columns = await pool.query(`
+                SELECT 
+                    column_name,
+                    data_type,
+                    column_default,
+                    is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = $1
+                ORDER BY ordinal_position
+            `, [tableName]);
+            
+            schema[tableName] = columns.rows;
+        }
+
+        res.json(schema);
+    } catch (err) {
+        console.error('Error fetching schema:', err);
+        res.status(500).json({ error: 'Failed to fetch database schema' });
+    }
+});
+
+// Add detailed schema endpoint
+app.get('/api/schema/details', async (req, res) => {
+    try {
+        // Get detailed table information
+        const schemaDetails = await pool.query(`
+            SELECT 
+                t.table_name,
+                c.column_name,
+                c.data_type,
+                c.column_default,
+                c.is_nullable,
+                c.character_maximum_length,
+                c.numeric_precision,
+                c.numeric_scale
+            FROM information_schema.tables t
+            JOIN information_schema.columns c 
+                ON t.table_name = c.table_name
+            WHERE t.table_schema = 'public'
+                AND c.table_schema = 'public'
+            ORDER BY t.table_name, c.ordinal_position;
+        `);
+
+        // Format the results in a more readable way
+        const formattedSchema = {};
+        schemaDetails.rows.forEach(row => {
+            if (!formattedSchema[row.table_name]) {
+                formattedSchema[row.table_name] = [];
+            }
+            formattedSchema[row.table_name].push({
+                column: row.column_name,
+                type: row.data_type,
+                nullable: row.is_nullable,
+                default: row.column_default,
+                maxLength: row.character_maximum_length,
+                precision: row.numeric_precision,
+                scale: row.numeric_scale
+            });
+        });
+
+        res.json(formattedSchema);
+    } catch (err) {
+        console.error('Error fetching detailed schema:', err);
+        res.status(500).json({ error: 'Failed to fetch detailed schema' });
+    }
 });
 
 app.listen(port, () => {
