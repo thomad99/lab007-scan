@@ -154,6 +154,20 @@
             font-size: 16px;
             color: #666;
         }
+        .result-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .skipper-info {
+            color: #0066cc;
+            font-size: 18px;
+        }
+        .no-match {
+            color: #666;
+            font-size: 16px;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -168,12 +182,6 @@
             <label>
                 <input type="checkbox" id="debugMode"> Show Debug Info
             </label>
-        </div>
-
-        <div id="sailNumberBox" class="sail-number-display" style="display: none;">
-            <h2>Detected Sail Number</h2>
-            <div class="sail-number-value">--</div>
-            <div class="sail-number-confidence"></div>
         </div>
 
         <div id="topResultsBox" class="sail-number-display" style="display: block;">
