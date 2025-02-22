@@ -522,12 +522,19 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
                 .sort((a, b) => b.confidence - a.confidence);
 
             if (potentialNumbers.length > 0) {
-                const bestMatch = potentialNumbers[0];
+                // Look up skipper info for all numbers
+                const lookupPromises = potentialNumbers.map(async (match) => {
+                    const skipperInfo = await lookupSkipperInfo(match.number);
+                    return {
+                        ...match,
+                        skipperInfo
+                    };
+                });
                 
-                // Look up skipper info
-                const skipperInfo = await lookupSkipperInfo(bestMatch.number);
+                const numbersWithSkippers = await Promise.all(lookupPromises);
+                const bestMatch = numbersWithSkippers[0];
 
-                // Store scan result
+                // Store scan result for the best match
                 await pool.query(`
                     INSERT INTO scan_results 
                     (sail_number, confidence, raw_text, status, skipper_name, boat_name, yacht_club)
@@ -537,18 +544,23 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
                         bestMatch.confidence,
                         JSON.stringify(analysis.rawText),
                         operationResult.status,
-                        skipperInfo?.skipper_name || null,
-                        skipperInfo?.boat_name || null,
-                        skipperInfo?.yacht_club || null
+                        bestMatch.skipperInfo?.skipper_name || null,
+                        bestMatch.skipperInfo?.boat_name || null,
+                        bestMatch.skipperInfo?.yacht_club || null
                     ]
                 );
+                console.log('Saved scan result:', {
+                    sailNumber: bestMatch.number,
+                    confidence: bestMatch.confidence,
+                    skipperName: bestMatch.skipperInfo?.skipper_name
+                });
 
-                // Add skipper info to response
+                // Add all skipper info to response
                 res.json({
                     success: true,
                     rawText: analysis.rawText,
                     detectedItems: analysis.detectedItems,
-                    skipperInfo: skipperInfo,
+                    numbersWithSkippers,
                     bestMatch: {
                         sailNumber: bestMatch.number,
                         confidence: bestMatch.confidence
@@ -670,12 +682,31 @@ app.get('/api/schema/details', async (req, res) => {
 // Add endpoint to get scan history
 app.get('/api/scans', async (req, res) => {
     try {
+        console.log('Fetching scan history...');
         const result = await pool.query(`
-            SELECT * FROM scan_results 
+            SELECT 
+                id,
+                sail_number,
+                confidence::float,
+                scan_time,
+                status,
+                skipper_name,
+                boat_name,
+                yacht_club
+            FROM scan_results 
             ORDER BY scan_time DESC 
             LIMIT 100
         `);
-        res.json(result.rows);
+        console.log('Found scan results:', result.rows.length);
+        
+        // Format the data
+        const formattedResults = result.rows.map(row => ({
+            ...row,
+            scan_time: row.scan_time.toISOString(),
+            confidence: parseFloat(row.confidence)
+        }));
+        
+        res.json(formattedResults);
     } catch (err) {
         console.error('Error fetching scan history:', err);
         res.status(500).json({ error: 'Failed to fetch scan history' });
