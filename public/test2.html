@@ -223,12 +223,27 @@
                 
                 // Update top results box
                 const topResultsBox = document.getElementById('topResultsBox');
-                const potentialNumbers = extractSailNumbers(data);
-                
+                const potentialNumbers = data.rawText
+                    .map(item => {
+                        const cleaned = item.text.replace(/[OoIl]/g, '0').replace(/[^0-9]/g, '');
+                        return {
+                            number: cleaned,
+                            confidence: item.confidence,
+                            originalText: item.text
+                        };
+                    })
+                    .filter(item => {
+                        const num = parseInt(item.number);
+                        return item.number.length >= 1 && 
+                               item.number.length <= 6 && 
+                               num >= 1 && 
+                               num <= 999999;
+                    })
+                    .sort((a, b) => b.confidence - a.confidence)
+                    .slice(0, 3); // Take top 3 results
+
                 if (potentialNumbers.length > 0) {
-                    // Take top 3 results
-                    const topResults = potentialNumbers.allNumbers.slice(0, 3);
-                    topResultsBox.querySelector('.top-results-content').innerHTML = topResults.map(result => `
+                    topResultsBox.querySelector('.top-results-content').innerHTML = potentialNumbers.map(result => `
                         <div class="top-result-item">
                             <div class="result-info">
                                 <span class="top-result-number">${result.number}</span>
@@ -246,28 +261,25 @@
                     topResultsBox.querySelector('.top-results-content').textContent = 'No numbers detected';
                 }
 
-                // Display results
+                // Display debug results
                 results.innerHTML = `
 === Azure Vision Analysis ===
 Time: ${new Date().toLocaleString()}
 ${data.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
 
-=== DETECTED SAIL NUMBERS ===
-${extractSailNumbers(data).message}
+=== DETECTED NUMBERS ===
+${potentialNumbers.map(num => 
+    `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+     From text: "${num.originalText}"`
+).join('\n')}
 
 === RAW AZURE ANALYSIS ===
 Raw Text Found:
 ${formatTextResults(data.rawText)}
 
-Detected Items:
-${formatDetectedItems(data.detectedItems)}
-
 Processing Info:
 - Processing Time: ${data.processingTime}
 - Status: ${data.status}
-
-=== Complete Azure Response ===
-${JSON.stringify(data.rawResponse, null, 2)}
                 `.trim();
 
                 if (data.status === 'Succeeded') {
