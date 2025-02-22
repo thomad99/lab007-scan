@@ -99,12 +99,12 @@ async function init() {
                 canvas.toBlob(resolve, 'image/jpeg', 0.95);
             });
 
-            // Send to backend for Azure processing - using /api/analyze instead of /api/scan
+            // Send to backend for Azure processing
             const formData = new FormData();
             formData.append('image', blob);
 
             debugDiv.textContent += '\nSending image to Azure...';
-            const response = await fetch('/api/analyze', {  // Changed endpoint
+            const response = await fetch('/api/analyze', {
                 method: 'POST',
                 body: formData
             });
@@ -113,62 +113,57 @@ async function init() {
                 throw new Error('Failed to process image');
             }
 
-            resultDiv.textContent = 'Waiting for Azure analysis...';
-            const result = await response.json();
+            resultDiv.textContent = 'Processing results...';
+            const data = await response.json();
 
-            // Add this line to update the top results
-            updateTopResults(result.rawText);
+            // Update top results box with numbers and skipper info
+            const topResultsBox = document.getElementById('topResultsBox');
+            if (data.numbersWithSkippers && data.numbersWithSkippers.length > 0) {
+                topResultsBox.querySelector('.top-results-content').innerHTML = 
+                    data.numbersWithSkippers.map(result => `
+                        <div class="top-result-item">
+                            <div class="result-info">
+                                <span class="top-result-number">${result.number}</span>
+                                ${result.skipperInfo ? 
+                                    `<span class="skipper-info">${result.skipperInfo.skipper_name || result.skipperInfo.boat_name || ''}</span>` : 
+                                    '<span class="no-match">(No Sailor Match)</span>'
+                                }
+                            </div>
+                            <span class="top-result-confidence ${getConfidenceClass(result.confidence)}">
+                                ${(result.confidence * 100).toFixed(1)}%
+                            </span>
+                        </div>
+                    `).join('');
+            } else {
+                topResultsBox.querySelector('.top-results-content').textContent = 'No numbers detected';
+            }
 
             // Show debug information if enabled
             if (debugCheckbox.checked) {
                 debugDiv.innerHTML = `
-=== Azure Vision Analysis ===
-Time: ${new Date().toLocaleString()}
-${result.status === 'Succeeded' ? '✅ Analysis Complete' : '⚠️ Analysis Limited'}
+                    === Azure Vision Analysis ===
+                    Time: ${new Date().toLocaleString()}
+                    Status: ${data.status}
 
-=== SAIL NUMBERS FOUND ===
-${result.sailNumbers?.length > 0 ? 
-    result.sailNumbers.map(num => 
-        `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
-         Original text: "${num.originalText}"
-         Location: ${formatBoundingBox(num.boundingBox)}`
-    ).join('\n')
-    : 'No sail numbers detected'}
+                    === Detected Numbers ===
+                    ${data.numbersWithSkippers?.map(num => 
+                        `• ${num.number} (${(num.confidence * 100).toFixed(1)}% confident)
+                         ${num.skipperInfo ? 
+                            `Skipper: ${num.skipperInfo.skipper_name || 'Unknown'}
+                             Boat: ${num.skipperInfo.boat_name || 'Unknown'}
+                             Club: ${num.skipperInfo.yacht_club || 'Unknown'}`
+                            : 'No sailor match'
+                         }`
+                    ).join('\n') || 'No numbers detected'}
 
-=== ALL TEXT FOUND ===
-${result.rawText?.map(item => 
-    `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)
-     Location: ${formatBoundingBox(item.boundingBox)}`
-).join('\n')}
-
-Processing Info:
-- Processing Time: ${result.processingTime}
-- Status: ${result.status}
-
-=== Complete Azure Response ===
-${JSON.stringify(result.rawResponse, null, 2)}
-                `.trim();
-            }
-
-            // Process sail numbers if found
-            if (result.sailNumbers && result.sailNumbers.length > 0) {
-                const bestMatch = result.sailNumbers[0];
-                const sailNumberBox = document.getElementById('sailNumberBox');
-                sailNumberBox.style.display = 'block';
-                
-                const confidenceClass = getConfidenceClass(bestMatch.confidence);
-                const confidencePercent = (bestMatch.confidence * 100).toFixed(1);
-                
-                sailNumberBox.innerHTML = `
-                    <h2>Detected Sail Number</h2>
-                    <div class="sail-number-value">${bestMatch.number}</div>
-                    <div class="sail-number-confidence">
-                        Confidence: <span class="${confidenceClass}">${confidencePercent}%</span>
-                    </div>
+                    === Raw Text ===
+                    ${data.rawText.map(item => 
+                        `• "${item.text}" (${(item.confidence * 100).toFixed(1)}% confident)`
+                    ).join('\n')}
                 `;
-            } else {
-                document.getElementById('sailNumberBox').style.display = 'none';
             }
+
+            resultDiv.textContent = 'Scan complete. Waiting for next scan...';
 
         } catch (err) {
             console.error('Scan error:', err);
@@ -176,10 +171,6 @@ ${JSON.stringify(result.rawResponse, null, 2)}
             if (debugCheckbox.checked) {
                 debugDiv.textContent += '\nError: ' + err.message;
             }
-
-            // Add this to show error in top results box
-            const topResultsContent = document.getElementById('topResultsBox').querySelector('.top-results-content');
-            topResultsContent.textContent = 'Error during scan';
         }
 
         // Wait 15 seconds before next scan
